@@ -69,6 +69,7 @@ import shutil        # 외부 TTS/오디오 재생 명령 감지
 import tempfile      # Edge TTS 임시 음성 파일
 import hashlib       # Edge TTS 캐시 파일 키 생성
 import time          # TTS 종료 대기 후 안내창 초기화 타이밍 제어
+import fnmatch       # 업데이트 백업 제외 패턴 처리
 import urllib.request
 import urllib.error
 import zipfile
@@ -3681,8 +3682,168 @@ def _quote_sh(value: str) -> str:
     return "'" + str(value).replace("'", "'\"'\"'") + "'"
 
 
+UPDATE_BACKUP_EXCLUDED_DIRS = {
+    ".git",
+    ".venv",
+    ".venv-windows",
+    ".venv-rpi",
+    "__pycache__",
+    ".pytest_cache",
+    "build",
+    "dist",
+    "tts_cache",
+}
+UPDATE_BACKUP_EXCLUDED_FILES = {
+    "cafe_kiosk.db",
+    "cafe_kiosk_settings.json",
+}
+UPDATE_BACKUP_EXCLUDED_PATTERNS = {
+    "*.pyc",
+    "*.pyo",
+    "*.log",
+    "*.tmp",
+    "*.json",
+}
+
+
+def _is_update_backup_excluded(rel_path: str) -> bool:
+    """업데이트 롤백 백업에서 제외할 로컬/생성 파일을 판별한다."""
+    rel_norm = rel_path.replace("\\", "/").strip("/")
+    parts = [part.lower() for part in rel_norm.split("/") if part]
+    if any(part in UPDATE_BACKUP_EXCLUDED_DIRS for part in parts):
+        return True
+    name = os.path.basename(rel_norm).lower()
+    if name in UPDATE_BACKUP_EXCLUDED_FILES:
+        return True
+    return any(fnmatch.fnmatch(name, pattern) for pattern in UPDATE_BACKUP_EXCLUDED_PATTERNS)
+
+
+def _create_update_backup(source_dir: str, label: str) -> dict:
+    """업데이트 직전 현재 앱 파일을 ZIP으로 백업한다."""
+    source_dir = os.path.abspath(source_dir)
+    if not os.path.isdir(source_dir):
+        return {"ok": False, "message": "업데이트 백업 대상 폴더를 찾지 못했습니다.", "detail": source_dir}
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir = os.path.join(tempfile.gettempdir(), "bean_brew_cafe_kiosk_updates", "backups")
+    backup_path = os.path.join(backup_dir, f"{label}_{timestamp}.zip")
+    try:
+        os.makedirs(backup_dir, exist_ok=True)
+        file_count = 0
+        with zipfile.ZipFile(backup_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for root, dirs, files in os.walk(source_dir):
+                rel_root = os.path.relpath(root, source_dir)
+                if rel_root == ".":
+                    rel_root = ""
+                dirs[:] = [
+                    d for d in dirs
+                    if not _is_update_backup_excluded(os.path.join(rel_root, d))
+                ]
+                for filename in files:
+                    abs_path = os.path.join(root, filename)
+                    rel_path = os.path.normpath(os.path.join(rel_root, filename))
+                    if _is_update_backup_excluded(rel_path):
+                        continue
+                    archive.write(abs_path, rel_path)
+                    file_count += 1
+        if file_count <= 0:
+            return {"ok": False, "message": "백업할 프로그램 파일을 찾지 못했습니다.", "detail": backup_path}
+    except (OSError, zipfile.BadZipFile) as exc:
+        return {"ok": False, "message": "업데이트 백업 생성 실패", "detail": str(exc)}
+
+    return {
+        "ok": True,
+        "path": backup_path,
+        "file_count": file_count,
+        "message": "업데이트 전 백업 생성 완료",
+    }
+
+
+def _write_windows_restore_script(backup_zip: str, target_dir: str, label: str) -> dict:
+    """Windows에서 백업 ZIP을 현재 앱 폴더로 되돌리는 스크립트를 만든다."""
+    script_path = os.path.join(
+        tempfile.gettempdir(),
+        "bean_brew_cafe_kiosk_updates",
+        f"restore_{label}.ps1",
+    )
+    restore_extract = os.path.join(tempfile.gettempdir(), "bean_brew_cafe_kiosk_restore_extract")
+    script = f"""
+$ErrorActionPreference = 'Stop'
+$backup = {_quote_ps(backup_zip)}
+$target = {_quote_ps(target_dir)}
+$extract = {_quote_ps(restore_extract)}
+if (!(Test-Path -LiteralPath $backup)) {{ throw "Backup file not found: $backup" }}
+if (!(Test-Path -LiteralPath $target)) {{ New-Item -ItemType Directory -Force -Path $target | Out-Null }}
+if (Test-Path -LiteralPath $extract) {{ Remove-Item -LiteralPath $extract -Recurse -Force }}
+New-Item -ItemType Directory -Force -Path $extract | Out-Null
+Expand-Archive -LiteralPath $backup -DestinationPath $extract -Force
+Get-ChildItem -LiteralPath $extract -Force | Copy-Item -Destination $target -Recurse -Force
+$launcher = Join-Path $target 'run_windows.cmd'
+if (Test-Path -LiteralPath $launcher) {{
+    Start-Process -FilePath $launcher -WorkingDirectory $target
+}}
+"""
+    try:
+        os.makedirs(os.path.dirname(script_path), exist_ok=True)
+        with open(script_path, "w", encoding="utf-8-sig") as fp:
+            fp.write(script)
+    except OSError as exc:
+        return {"ok": False, "message": "Windows 복구 스크립트 생성 실패", "detail": str(exc)}
+    return {"ok": True, "path": script_path, "message": "Windows 복구 스크립트 생성 완료"}
+
+
+def _write_linux_restore_script(backup_zip: str, target_dir: str, label: str) -> dict:
+    """Linux/Raspberry Pi에서 백업 ZIP을 현재 앱 폴더로 되돌리는 스크립트를 만든다."""
+    script_path = os.path.join(
+        tempfile.gettempdir(),
+        "bean_brew_cafe_kiosk_updates",
+        f"restore_{label}.sh",
+    )
+    script = f"""#!/bin/sh
+set -eu
+BACKUP={_quote_sh(backup_zip)}
+TARGET={_quote_sh(target_dir)}
+RESTORE_DIR="${{TMPDIR:-/tmp}}/bean_brew_cafe_kiosk_restore_extract"
+if [ ! -f "$BACKUP" ]; then
+  echo "Backup file not found: $BACKUP"
+  exit 1
+fi
+mkdir -p "$TARGET"
+rm -rf "$RESTORE_DIR"
+mkdir -p "$RESTORE_DIR"
+python3 - "$BACKUP" "$RESTORE_DIR" <<'PY'
+import sys, zipfile
+backup, restore_dir = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(backup) as archive:
+    archive.extractall(restore_dir)
+PY
+cp -a "$RESTORE_DIR"/. "$TARGET"/
+if command -v cafe-kiosk >/dev/null 2>&1; then
+  nohup cafe-kiosk >/dev/null 2>&1 &
+elif [ -x "$TARGET/run_raspberry_pi.sh" ]; then
+  nohup "$TARGET/run_raspberry_pi.sh" >/dev/null 2>&1 &
+fi
+echo "Rollback restore completed: $TARGET"
+"""
+    try:
+        os.makedirs(os.path.dirname(script_path), exist_ok=True)
+        with open(script_path, "w", encoding="utf-8") as fp:
+            fp.write(script)
+        os.chmod(script_path, 0o755)
+    except OSError as exc:
+        return {"ok": False, "message": "Linux 복구 스크립트 생성 실패", "detail": str(exc)}
+    return {"ok": True, "path": script_path, "message": "Linux 복구 스크립트 생성 완료"}
+
+
 def _launch_windows_setup_update(installer_path: str) -> dict:
     """Windows 설치형 업데이트: Setup EXE를 실행한다."""
+    backup = _create_update_backup(PROJECT_DIR, "windows_setup")
+    if not backup.get("ok"):
+        return backup
+    restore = _write_windows_restore_script(str(backup.get("path")), PROJECT_DIR, "windows_setup")
+    if not restore.get("ok"):
+        return restore
+
     try:
         subprocess.Popen([installer_path], cwd=os.path.dirname(installer_path))
     except OSError as exc:
@@ -3690,7 +3851,11 @@ def _launch_windows_setup_update(installer_path: str) -> dict:
     return {
         "ok": True,
         "message": "설치 프로그램을 실행했습니다.",
-        "detail": "설치 안내에 따라 업데이트를 완료해 주세요. 현재 프로그램은 종료됩니다.",
+        "detail": (
+            "설치 안내에 따라 업데이트를 완료해 주세요. 현재 프로그램은 종료됩니다.\n"
+            f"백업 파일: {backup.get('path')}\n"
+            f"복구 스크립트: {restore.get('path')}"
+        ),
         "exit_app": True,
     }
 
@@ -3700,25 +3865,54 @@ def _launch_windows_portable_update(zip_path: str) -> dict:
     if not zipfile.is_zipfile(zip_path):
         return {"ok": False, "message": "다운로드한 ZIP 파일이 올바르지 않습니다."}
 
+    backup = _create_update_backup(PROJECT_DIR, "windows_portable")
+    if not backup.get("ok"):
+        return backup
+    restore = _write_windows_restore_script(str(backup.get("path")), PROJECT_DIR, "windows_portable")
+    if not restore.get("ok"):
+        return restore
+
     helper = os.path.join(tempfile.gettempdir(), "bean_brew_portable_update.ps1")
     target_dir = PROJECT_DIR
     extract_dir = os.path.join(tempfile.gettempdir(), "bean_brew_portable_update_extract")
+    restore_dir = os.path.join(tempfile.gettempdir(), "bean_brew_portable_update_restore")
+    log_path = os.path.join(tempfile.gettempdir(), "bean_brew_cafe_kiosk_updates", "portable_update.log")
     pid = os.getpid()
     script = f"""
 $ErrorActionPreference = 'Stop'
 $zip = {_quote_ps(zip_path)}
 $target = {_quote_ps(target_dir)}
 $extract = {_quote_ps(extract_dir)}
+$backup = {_quote_ps(str(backup.get("path")))}
+$restore = {_quote_ps(restore_dir)}
+$log = {_quote_ps(log_path)}
 $pidToWait = {pid}
 try {{
     Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue
 }} catch {{}}
-if (Test-Path -LiteralPath $extract) {{
-    Remove-Item -LiteralPath $extract -Recurse -Force
+try {{
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $log) | Out-Null
+    if (Test-Path -LiteralPath $extract) {{
+        Remove-Item -LiteralPath $extract -Recurse -Force
+    }}
+    New-Item -ItemType Directory -Force -Path $extract | Out-Null
+    Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+    Get-ChildItem -LiteralPath $extract -Force | Copy-Item -Destination $target -Recurse -Force
+    "Portable update completed: $(Get-Date)" | Out-File -FilePath $log -Encoding UTF8
+}} catch {{
+    "Portable update failed: $($_.Exception.Message)" | Out-File -FilePath $log -Encoding UTF8
+    try {{
+        if (Test-Path -LiteralPath $restore) {{
+            Remove-Item -LiteralPath $restore -Recurse -Force
+        }}
+        New-Item -ItemType Directory -Force -Path $restore | Out-Null
+        Expand-Archive -LiteralPath $backup -DestinationPath $restore -Force
+        Get-ChildItem -LiteralPath $restore -Force | Copy-Item -Destination $target -Recurse -Force
+        "Rollback restore completed: $(Get-Date)" | Out-File -FilePath $log -Encoding UTF8 -Append
+    }} catch {{
+        "Rollback restore failed: $($_.Exception.Message)" | Out-File -FilePath $log -Encoding UTF8 -Append
+    }}
 }}
-New-Item -ItemType Directory -Force -Path $extract | Out-Null
-Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
-Get-ChildItem -LiteralPath $extract -Force | Copy-Item -Destination $target -Recurse -Force
 $launcher = Join-Path $target 'run_windows.cmd'
 if (Test-Path -LiteralPath $launcher) {{
     Start-Process -FilePath $launcher -WorkingDirectory $target
@@ -3740,14 +3934,34 @@ if (Test-Path -LiteralPath $launcher) {{
     return {
         "ok": True,
         "message": "포터블 업데이트를 시작했습니다.",
-        "detail": "현재 프로그램이 종료된 뒤 파일을 교체하고 다시 실행합니다.",
+        "detail": (
+            "현재 프로그램이 종료된 뒤 파일을 교체하고 다시 실행합니다. "
+            "파일 교체에 실패하면 백업으로 자동 복구를 시도합니다.\n"
+            f"백업 파일: {backup.get('path')}\n"
+            f"복구 스크립트: {restore.get('path')}\n"
+            f"업데이트 로그: {log_path}"
+        ),
         "exit_app": True,
     }
 
 
 def _launch_linux_deb_update(deb_path: str) -> dict:
     """Raspberry Pi/Linux 업데이트: deb 설치 명령을 터미널에서 실행한다."""
-    cmd = f"sudo apt install -y {_quote_sh(deb_path)}; echo; read -p '업데이트가 끝났습니다. Enter를 누르면 닫습니다.'"
+    backup = _create_update_backup(PROJECT_DIR, "linux_deb")
+    if not backup.get("ok"):
+        return backup
+    restore = _write_linux_restore_script(str(backup.get("path")), PROJECT_DIR, "linux_deb")
+    if not restore.get("ok"):
+        return restore
+
+    cmd = (
+        f"if sudo apt install -y {_quote_sh(deb_path)}; then "
+        "echo '업데이트 설치가 완료되었습니다.'; "
+        "else "
+        "echo '업데이트 설치가 실패하여 백업 복구를 시도합니다.'; "
+        f"sh {_quote_sh(str(restore.get('path')))}; "
+        "fi; echo; read -p 'Enter를 누르면 닫습니다.'"
+    )
     terminals = [
         ("lxterminal", ["lxterminal", "-e", "bash", "-lc", cmd]),
         ("x-terminal-emulator", ["x-terminal-emulator", "-e", "bash", "-lc", cmd]),
@@ -3756,11 +3970,15 @@ def _launch_linux_deb_update(deb_path: str) -> dict:
     ]
     try:
         if hasattr(os, "geteuid") and os.geteuid() == 0:
-            subprocess.Popen(["apt", "install", "-y", deb_path])
+            subprocess.Popen(["sh", "-c", f"apt install -y {_quote_sh(deb_path)} || sh {_quote_sh(str(restore.get('path')))}"])
             return {
                 "ok": True,
                 "message": "deb 업데이트 설치를 시작했습니다.",
-                "detail": "설치가 끝나면 프로그램을 다시 시작해 주세요.",
+                "detail": (
+                    "설치가 끝나면 프로그램을 다시 시작해 주세요. 실패 시 백업 복구를 시도합니다.\n"
+                    f"백업 파일: {backup.get('path')}\n"
+                    f"복구 스크립트: {restore.get('path')}"
+                ),
                 "exit_app": True,
             }
         for exe, args in terminals:
@@ -3769,7 +3987,12 @@ def _launch_linux_deb_update(deb_path: str) -> dict:
                 return {
                     "ok": True,
                     "message": "터미널에서 deb 업데이트 설치를 시작했습니다.",
-                    "detail": "sudo 비밀번호를 입력해 설치를 완료한 뒤 프로그램을 다시 시작해 주세요.",
+                    "detail": (
+                        "sudo 비밀번호를 입력해 설치를 완료한 뒤 프로그램을 다시 시작해 주세요. "
+                        "실패 시 백업 복구를 시도합니다.\n"
+                        f"백업 파일: {backup.get('path')}\n"
+                        f"복구 스크립트: {restore.get('path')}"
+                    ),
                     "exit_app": True,
                 }
     except OSError as exc:
@@ -3778,7 +4001,12 @@ def _launch_linux_deb_update(deb_path: str) -> dict:
     return {
         "ok": False,
         "message": "터미널을 찾지 못했습니다.",
-        "detail": f"아래 명령을 직접 실행해 주세요.\nsudo apt install -y {_quote_sh(deb_path)}",
+        "detail": (
+            "아래 명령을 직접 실행해 주세요.\n"
+            f"sudo apt install -y {_quote_sh(deb_path)} || sh {_quote_sh(str(restore.get('path')))}\n"
+            f"백업 파일: {backup.get('path')}\n"
+            f"복구 스크립트: {restore.get('path')}"
+        ),
     }
 
 

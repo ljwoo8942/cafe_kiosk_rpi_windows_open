@@ -17,18 +17,18 @@ Raspberry Pi에서는 `xrandr`로 연결된 모니터 크기와 위치를 감지
 
 최신 설치 파일은 GitHub Releases에서 받을 수 있습니다. 일반 사용자는 아래 파일만 다운로드하면 됩니다.
 
-- Windows: [CafeKiosk-Windows-Setup-1.0.8.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.8/CafeKiosk-Windows-Setup-1.0.8.exe)
-- Raspberry Pi / Linux: [cafe-kiosk-rpi_1.0.8_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.8/cafe-kiosk-rpi_1.0.8_all.deb)
-- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.0.8.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.8/CafeKiosk-Windows-Portable-1.0.8.zip)
+- Windows: [CafeKiosk-Windows-Setup-1.0.9.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.9/CafeKiosk-Windows-Setup-1.0.9.exe)
+- Raspberry Pi / Linux: [cafe-kiosk-rpi_1.0.9_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.9/cafe-kiosk-rpi_1.0.9_all.deb)
+- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.0.9.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.9/CafeKiosk-Windows-Portable-1.0.9.zip)
 
 릴리즈 페이지:
-[Cafe Kiosk v1.0.8](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.0.8)
+[Cafe Kiosk v1.0.9](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.0.9)
 
 ## 설치 방법
 
 Windows:
 
-1. `CafeKiosk-Windows-Setup-1.0.8.exe`를 다운로드합니다.
+1. `CafeKiosk-Windows-Setup-1.0.9.exe`를 다운로드합니다.
 2. 설치 파일을 실행합니다.
 3. 설치가 끝나면 바탕화면의 `BEAN & BREW Cafe Kiosk` 바로가기로 실행합니다.
 
@@ -38,11 +38,11 @@ Windows에서 SmartScreen 경고가 표시될 수 있습니다. 개인 개발자
 
 Raspberry Pi / Linux:
 
-1. `cafe-kiosk-rpi_1.0.8_all.deb`를 다운로드합니다.
+1. `cafe-kiosk-rpi_1.0.9_all.deb`를 다운로드합니다.
 2. 파일이 있는 폴더에서 아래 명령을 실행합니다.
 
 ```bash
-sudo apt install ./cafe-kiosk-rpi_1.0.8_all.deb
+sudo apt install ./cafe-kiosk-rpi_1.0.9_all.deb
 cafe-kiosk
 ```
 
@@ -64,6 +64,8 @@ cafe-kiosk
 - 관리자 통계, 인기 메뉴, 음성 인식 실패 로그
 - 품절 관리, 할인 설정, TTS 설정, 마이크 설정
 - Windows / Raspberry Pi 환경별 TTS 및 오디오 폴백 처리
+- 실행 중 자동 업데이트 확인 및 설정 버튼 업데이트 강조
+- 업데이트 파일 SHA256 검증, 적용 전 백업, 실패 시 복구 스크립트 제공
 
 ## 주문 흐름
 
@@ -107,6 +109,14 @@ TTS는 설정에서 엔진을 선택할 수 있습니다.
 - espeak-ng
 
 Edge TTS는 반복 안내 문구를 캐시하여 다음 실행 후에도 빠르게 재생할 수 있도록 구성되어 있습니다. 볼륨, 속도, 피치, TTS 엔진, TTS 음성, 마이크 선택은 프로그램 설정으로 저장되어 다음 실행 시 다시 불러옵니다.
+
+## 업데이트와 복구
+
+프로그램 시작 시 GitHub Releases의 최신 버전을 확인합니다. 새 버전이 있으면 설정 버튼 테두리가 강조되며, 설정 팝업의 업데이트 버튼에서 설치를 진행할 수 있습니다.
+
+업데이트 파일은 다운로드 후 GitHub Release의 SHA256 검증값과 비교합니다. 검증값이 없거나 파일이 손상된 경우 업데이트를 중단합니다.
+
+업데이트를 적용하기 전 현재 프로그램 파일을 임시 폴더에 백업합니다. Windows 무설치 버전은 파일 교체 실패 시 자동 복구를 시도하고, Windows 설치형과 Raspberry Pi/Linux 버전은 백업 파일과 복구 스크립트 경로를 안내합니다. 주문 이력, 설정, TTS 캐시 같은 개인 실행 데이터는 백업 대상에서 제외해 사용 중인 로컬 데이터가 덮어써지지 않도록 했습니다.
 
 ## 프로젝트 구조
 
