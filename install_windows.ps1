@@ -192,4 +192,4 @@ Write-Step "설치 완료"
 Write-Host "실행 방법:" -ForegroundColor Green
 Write-Host "  .\run_windows.cmd"
 Write-Host ""
-Write-Host "설정 창의 업데이트 버튼은 Git이 설치되어 있고 이 폴더가 Git 저장소일 때 동작합니다."
+Write-Host "설정 창의 업데이트 버튼은 GitHub Releases에서 최신 설치 파일을 확인하고 적용합니다."

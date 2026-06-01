@@ -71,6 +71,7 @@ import hashlib       # Edge TTS 캐시 파일 키 생성
 import time          # TTS 종료 대기 후 안내창 초기화 타이밍 제어
 import urllib.request
 import urllib.error
+import zipfile
 from datetime import datetime
 
 try:
@@ -3562,9 +3563,265 @@ def _is_newer_version(latest: str, current: str) -> bool:
     return tuple(left) > tuple(right)
 
 
+def _detect_update_channel() -> str:
+    """현재 실행 환경에 맞는 릴리스 자산 종류를 고른다."""
+    if IS_WINDOWS:
+        try:
+            has_uninstaller = any(
+                name.lower().startswith("unins") and name.lower().endswith(".exe")
+                for name in os.listdir(PROJECT_DIR)
+            )
+        except OSError:
+            has_uninstaller = False
+        return "windows_setup" if has_uninstaller else "windows_portable"
+    if IS_LINUX:
+        return "rpi_deb" if (IS_RPI or PROJECT_DIR.startswith("/opt/cafe-kiosk")) else "linux_deb"
+    return "source"
+
+
+def _asset_prefix_for_channel(channel: str) -> str | None:
+    """업데이트 채널별 GitHub Release 파일명 접두사."""
+    if channel == "windows_setup":
+        return "CafeKiosk-Windows-Setup-"
+    if channel == "windows_portable":
+        return "CafeKiosk-Windows-Portable-"
+    if channel in ("rpi_deb", "linux_deb"):
+        return "cafe-kiosk-rpi_"
+    return None
+
+
+def _select_release_asset(assets: list[dict], channel: str) -> dict | None:
+    """현재 환경에 맞는 Release asset을 선택한다."""
+    prefix = _asset_prefix_for_channel(channel)
+    if not prefix:
+        return None
+    for asset in assets:
+        name = str(asset.get("name", ""))
+        if name.startswith(prefix):
+            return asset
+    return None
+
+
+def _download_url_for_asset(asset: dict) -> str:
+    """GitHub API/gh 출력 양쪽 형식에서 다운로드 URL을 얻는다."""
+    return str(asset.get("browser_download_url") or asset.get("url") or "")
+
+
+def _expected_sha256_for_asset(asset: dict) -> str:
+    """Release asset digest에서 sha256 값을 추출한다."""
+    digest = str(asset.get("digest") or "").strip().lower()
+    if digest.startswith("sha256:"):
+        return digest.split(":", 1)[1]
+    return ""
+
+
+def _sha256_file(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fp:
+        for chunk in iter(lambda: fp.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _download_asset(asset: dict, target_dir: str, timeout: int = 60) -> dict:
+    """Release asset을 다운로드하고 digest가 있으면 SHA256을 검증한다."""
+    url = _download_url_for_asset(asset)
+    name = str(asset.get("name") or os.path.basename(url) or "update.bin")
+    if not url:
+        return {"ok": False, "message": "다운로드 URL을 찾지 못했습니다."}
+
+    os.makedirs(target_dir, exist_ok=True)
+    target = os.path.join(target_dir, name)
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": "BEAN-BREW-Cafe-Kiosk"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response, open(target, "wb") as fp:
+            shutil.copyfileobj(response, fp)
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return {"ok": False, "message": "업데이트 파일 다운로드 실패", "detail": str(exc)}
+
+    expected = _expected_sha256_for_asset(asset)
+    actual = _sha256_file(target)
+    if not expected:
+        try:
+            os.remove(target)
+        except OSError:
+            pass
+        return {
+            "ok": False,
+            "message": "업데이트 파일 검증값을 찾지 못했습니다.",
+            "detail": "GitHub Release asset의 SHA256 digest가 없어 업데이트를 중단했습니다.",
+        }
+    if expected and actual.lower() != expected.lower():
+        try:
+            os.remove(target)
+        except OSError:
+            pass
+        return {
+            "ok": False,
+            "message": "업데이트 파일 검증 실패",
+            "detail": f"SHA256 불일치\n기대값: {expected}\n실제값: {actual}",
+        }
+
+    return {
+        "ok": True,
+        "path": target,
+        "sha256": actual,
+        "message": "업데이트 파일 다운로드 및 검증 완료",
+    }
+
+
+def _quote_ps(value: str) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def _quote_sh(value: str) -> str:
+    return "'" + str(value).replace("'", "'\"'\"'") + "'"
+
+
+def _launch_windows_setup_update(installer_path: str) -> dict:
+    """Windows 설치형 업데이트: Setup EXE를 실행한다."""
+    try:
+        subprocess.Popen([installer_path], cwd=os.path.dirname(installer_path))
+    except OSError as exc:
+        return {"ok": False, "message": "설치 파일 실행 실패", "detail": str(exc)}
+    return {
+        "ok": True,
+        "message": "설치 프로그램을 실행했습니다.",
+        "detail": "설치 안내에 따라 업데이트를 완료해 주세요. 현재 프로그램은 종료됩니다.",
+        "exit_app": True,
+    }
+
+
+def _launch_windows_portable_update(zip_path: str) -> dict:
+    """Windows portable 업데이트: 앱 종료 후 PowerShell helper가 현재 폴더를 덮어쓴다."""
+    if not zipfile.is_zipfile(zip_path):
+        return {"ok": False, "message": "다운로드한 ZIP 파일이 올바르지 않습니다."}
+
+    helper = os.path.join(tempfile.gettempdir(), "bean_brew_portable_update.ps1")
+    target_dir = PROJECT_DIR
+    extract_dir = os.path.join(tempfile.gettempdir(), "bean_brew_portable_update_extract")
+    pid = os.getpid()
+    script = f"""
+$ErrorActionPreference = 'Stop'
+$zip = {_quote_ps(zip_path)}
+$target = {_quote_ps(target_dir)}
+$extract = {_quote_ps(extract_dir)}
+$pidToWait = {pid}
+try {{
+    Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue
+}} catch {{}}
+if (Test-Path -LiteralPath $extract) {{
+    Remove-Item -LiteralPath $extract -Recurse -Force
+}}
+New-Item -ItemType Directory -Force -Path $extract | Out-Null
+Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
+Get-ChildItem -LiteralPath $extract -Force | Copy-Item -Destination $target -Recurse -Force
+$launcher = Join-Path $target 'run_windows.cmd'
+if (Test-Path -LiteralPath $launcher) {{
+    Start-Process -FilePath $launcher -WorkingDirectory $target
+}}
+"""
+    try:
+        with open(helper, "w", encoding="utf-8-sig") as fp:
+            fp.write(script)
+        powershell = os.path.join(os.environ.get("SystemRoot", "C:\\Windows"),
+                                  "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+        if not os.path.isfile(powershell):
+            powershell = "powershell.exe"
+        subprocess.Popen([
+            powershell, "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "-File", helper,
+        ])
+    except OSError as exc:
+        return {"ok": False, "message": "포터블 업데이트 스크립트 실행 실패", "detail": str(exc)}
+    return {
+        "ok": True,
+        "message": "포터블 업데이트를 시작했습니다.",
+        "detail": "현재 프로그램이 종료된 뒤 파일을 교체하고 다시 실행합니다.",
+        "exit_app": True,
+    }
+
+
+def _launch_linux_deb_update(deb_path: str) -> dict:
+    """Raspberry Pi/Linux 업데이트: deb 설치 명령을 터미널에서 실행한다."""
+    cmd = f"sudo apt install -y {_quote_sh(deb_path)}; echo; read -p '업데이트가 끝났습니다. Enter를 누르면 닫습니다.'"
+    terminals = [
+        ("lxterminal", ["lxterminal", "-e", "bash", "-lc", cmd]),
+        ("x-terminal-emulator", ["x-terminal-emulator", "-e", "bash", "-lc", cmd]),
+        ("gnome-terminal", ["gnome-terminal", "--", "bash", "-lc", cmd]),
+        ("konsole", ["konsole", "-e", "bash", "-lc", cmd]),
+    ]
+    try:
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            subprocess.Popen(["apt", "install", "-y", deb_path])
+            return {
+                "ok": True,
+                "message": "deb 업데이트 설치를 시작했습니다.",
+                "detail": "설치가 끝나면 프로그램을 다시 시작해 주세요.",
+                "exit_app": True,
+            }
+        for exe, args in terminals:
+            if shutil.which(exe):
+                subprocess.Popen(args)
+                return {
+                    "ok": True,
+                    "message": "터미널에서 deb 업데이트 설치를 시작했습니다.",
+                    "detail": "sudo 비밀번호를 입력해 설치를 완료한 뒤 프로그램을 다시 시작해 주세요.",
+                    "exit_app": True,
+                }
+    except OSError as exc:
+        return {"ok": False, "message": "deb 설치 명령 실행 실패", "detail": str(exc)}
+
+    return {
+        "ok": False,
+        "message": "터미널을 찾지 못했습니다.",
+        "detail": f"아래 명령을 직접 실행해 주세요.\nsudo apt install -y {_quote_sh(deb_path)}",
+    }
+
+
+def _apply_release_update(release_info: dict) -> dict:
+    """선택된 릴리스 자산을 내려받아 현재 환경에 맞게 적용을 시작한다."""
+    asset = release_info.get("asset")
+    if not asset:
+        return {"ok": False, "message": "현재 환경에 맞는 업데이트 파일을 찾지 못했습니다."}
+
+    channel = str(release_info.get("channel") or _detect_update_channel())
+    target_dir = os.path.join(tempfile.gettempdir(), "bean_brew_cafe_kiosk_updates")
+    download = _download_asset(asset, target_dir)
+    if not download.get("ok"):
+        return download
+
+    path = str(download.get("path"))
+    if channel == "windows_setup":
+        result = _launch_windows_setup_update(path)
+    elif channel == "windows_portable":
+        result = _launch_windows_portable_update(path)
+    elif channel in ("rpi_deb", "linux_deb"):
+        result = _launch_linux_deb_update(path)
+    else:
+        return {
+            "ok": False,
+            "message": "지원하지 않는 업데이트 방식입니다.",
+            "detail": f"다운로드 파일: {path}",
+        }
+
+    result.setdefault("detail", "")
+    result["detail"] = (
+        f"{download.get('message')}\n"
+        f"파일: {path}\n"
+        f"SHA256: {download.get('sha256')}\n\n"
+        f"{result.get('detail', '')}"
+    ).strip()
+    return result
+
+
 def _check_latest_release_status(timeout: int = 8) -> dict:
     """GitHub Releases 기준으로 새 배포 버전이 있는지 가볍게 확인한다."""
     current = _current_app_version()
+    channel = _detect_update_channel()
     request = urllib.request.Request(
         GITHUB_LATEST_RELEASE_API,
         headers={
@@ -3579,12 +3836,15 @@ def _check_latest_release_status(timeout: int = 8) -> dict:
         latest_tag = str(data.get("tag_name") or data.get("name") or "").strip()
         latest = latest_tag[1:] if latest_tag.lower().startswith("v") else latest_tag
         html_url = str(data.get("html_url") or GITHUB_RELEASES_URL)
+        assets = data.get("assets") if isinstance(data.get("assets"), list) else []
+        asset = _select_release_asset(assets, channel)
         if not latest:
             return {
                 "ok": False,
                 "available": False,
                 "message": "최신 릴리스 버전을 확인하지 못했습니다.",
                 "current": current,
+                "channel": channel,
             }
         available = _is_newer_version(latest, current)
         return {
@@ -3594,6 +3854,10 @@ def _check_latest_release_status(timeout: int = 8) -> dict:
             "latest": latest,
             "tag": latest_tag or f"v{latest}",
             "url": html_url,
+            "channel": channel,
+            "asset": asset,
+            "asset_name": asset.get("name") if asset else "",
+            "asset_digest": asset.get("digest") if asset else "",
             "message": (f"새 버전 v{latest} 사용 가능" if available
                         else f"현재 최신 버전입니다. v{current}"),
         }
@@ -3602,6 +3866,7 @@ def _check_latest_release_status(timeout: int = 8) -> dict:
             "ok": False,
             "available": False,
             "current": current,
+            "channel": channel,
             "message": "업데이트 확인 실패",
             "detail": str(exc),
         }
@@ -3765,7 +4030,7 @@ def show_update_popup(root: tk.Tk) -> None:
     _center_popup_on_owner(popup, owner, pw, ph)
     show_update_popup._popup = popup
 
-    state = {"busy": False, "repo": None, "upstream": None, "can_apply": False}
+    state = {"busy": False, "release": None, "can_apply": False}
     status_var = tk.StringVar(value="업데이트 확인 버튼을 눌러 최신 버전을 확인하세요.")
 
     outer = tk.Frame(popup, bg="#102033", padx=_px(18), pady=_px(16))
@@ -3808,25 +4073,29 @@ def show_update_popup(root: tk.Tk) -> None:
         apply_btn.config(state="disabled" if busy or not state["can_apply"] else "normal")
 
     def _finish_check(result: dict) -> None:
-        state["repo"] = result.get("repo")
-        state["upstream"] = result.get("upstream")
-        state["can_apply"] = bool(result.get("ok") and result.get("state") == "behind")
+        state["release"] = result
+        state["can_apply"] = bool(result.get("ok") and result.get("available") and result.get("asset"))
         _set_busy(False)
         status_var.set(str(result.get("message", "업데이트 확인을 완료했습니다.")))
 
         if result.get("ok"):
             detail = (
-                f"저장소: {result.get('repo', '-')}\n"
-                f"원격: {result.get('remote_url', '-')}\n"
-                f"브랜치: {result.get('branch', '-')}\n"
-                f"기준점: {result.get('upstream', '-')}\n"
-                f"현재 버전: {result.get('local', '-')}\n"
-                f"원격 버전: {result.get('remote', '-')}\n"
+                f"현재 버전: v{result.get('current', '-')}\n"
+                f"최신 버전: v{result.get('latest', '-')}\n"
+                f"업데이트 방식: {result.get('channel', '-')}\n"
+                f"릴리스: {result.get('url', '-')}\n"
             )
-            if result.get("state") == "behind":
-                detail += "\n업데이트 적용 버튼을 누르면 최신 코드를 내려받습니다.\n적용 후 프로그램을 다시 시작해 주세요."
-            elif result.get("state") in ("ahead", "diverged"):
-                detail += "\n로컬 코드 상태 때문에 자동 업데이트는 진행하지 않습니다."
+            if result.get("asset"):
+                detail += (
+                    f"설치 파일: {result.get('asset_name', '-')}\n"
+                    f"검증값: {result.get('asset_digest', '-')}\n"
+                )
+            if result.get("available") and result.get("asset"):
+                detail += "\n업데이트 적용 버튼을 누르면 파일을 다운로드하고 SHA256 검증 후 설치를 시작합니다."
+            elif result.get("available"):
+                detail += "\n현재 환경에 맞는 설치 파일을 릴리스에서 찾지 못했습니다."
+            else:
+                detail += "\n이미 최신 버전입니다."
             _write_log(detail)
         else:
             _write_log(str(result.get("detail", "")))
@@ -3840,7 +4109,7 @@ def show_update_popup(root: tk.Tk) -> None:
         _write_log("잠시만 기다려 주세요.")
 
         def _worker() -> None:
-            result = _check_update_status()
+            result = _check_latest_release_status(timeout=12)
             popup.after(0, lambda: _finish_check(result) if _widget_exists(popup) else None)
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -3851,32 +4120,42 @@ def show_update_popup(root: tk.Tk) -> None:
         status_var.set(str(result.get("message", "업데이트 작업을 완료했습니다.")))
         _write_log(str(result.get("detail", "")))
         if result.get("ok"):
-            speak("업데이트가 완료되었습니다. 프로그램을 다시 시작해 주세요.")
-            messagebox.showinfo("업데이트", "업데이트가 완료되었습니다.\n프로그램을 다시 시작해 주세요.", parent=popup)
+            speak("업데이트를 시작했습니다.")
+            messagebox.showinfo(
+                "업데이트",
+                str(result.get("message", "업데이트를 시작했습니다.")) +
+                "\n\n현재 프로그램은 종료됩니다.",
+                parent=popup,
+            )
+            if result.get("exit_app"):
+                try:
+                    popup.after(500, popup.winfo_toplevel().destroy)
+                except tk.TclError:
+                    pass
         else:
             messagebox.showwarning("업데이트", str(result.get("message", "업데이트에 실패했습니다.")), parent=popup)
 
     def _start_apply() -> None:
         if state["busy"] or not state["can_apply"]:
             return
-        repo_dir = state.get("repo")
-        upstream = state.get("upstream")
-        if not repo_dir or not upstream:
+        release_info = state.get("release")
+        if not release_info:
             messagebox.showwarning("업데이트", "먼저 업데이트 확인을 실행해 주세요.", parent=popup)
             return
         ok = messagebox.askyesno(
             "업데이트 적용",
-            "최신 코드를 내려받습니다.\n완료 후 프로그램을 다시 시작해야 합니다.\n계속할까요?",
+            "최신 설치 파일을 다운로드하고 검증한 뒤 업데이트를 시작합니다.\n"
+            "적용 중 현재 프로그램이 종료될 수 있습니다.\n계속할까요?",
             parent=popup
         )
         if not ok:
             return
         _set_busy(True)
         status_var.set("업데이트를 적용하는 중입니다...")
-        _write_log("로컬 변경사항을 확인한 뒤 최신 코드를 내려받습니다.")
+        _write_log("릴리스 파일을 다운로드하고 SHA256 검증을 진행합니다.")
 
         def _worker() -> None:
-            result = _apply_update(str(repo_dir), str(upstream))
+            result = _apply_release_update(dict(release_info))
             popup.after(0, lambda: _finish_apply(result) if _widget_exists(popup) else None)
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -3905,9 +4184,9 @@ def show_update_popup(root: tk.Tk) -> None:
               command=popup.destroy).grid(row=0, column=2, sticky="ew", padx=(_px(6), 0))
 
     _write_log(
-        "GitHub에 올린 최신 코드를 내려받는 기능입니다.\n"
-        "Git으로 받은 저장소에서 실행 중일 때 사용할 수 있습니다.\n"
-        "업데이트 적용 후에는 프로그램을 다시 시작해야 새 코드가 반영됩니다."
+        "GitHub Releases의 최신 설치 파일을 확인합니다.\n"
+        "Windows 설치형은 Setup EXE, 포터블은 ZIP, Raspberry Pi는 deb 파일을 사용합니다.\n"
+        "다운로드 후 SHA256 검증을 통과해야 업데이트를 시작합니다."
     )
 
 

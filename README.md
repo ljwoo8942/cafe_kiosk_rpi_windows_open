@@ -17,18 +17,18 @@ Raspberry Pi에서는 `xrandr`로 연결된 모니터 크기와 위치를 감지
 
 최신 설치 파일은 GitHub Releases에서 받을 수 있습니다. 일반 사용자는 아래 파일만 다운로드하면 됩니다.
 
-- Windows: [CafeKiosk-Windows-Setup-1.0.7.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.7/CafeKiosk-Windows-Setup-1.0.7.exe)
-- Raspberry Pi / Linux: [cafe-kiosk-rpi_1.0.7_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.7/cafe-kiosk-rpi_1.0.7_all.deb)
-- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.0.7.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.7/CafeKiosk-Windows-Portable-1.0.7.zip)
+- Windows: [CafeKiosk-Windows-Setup-1.0.8.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.8/CafeKiosk-Windows-Setup-1.0.8.exe)
+- Raspberry Pi / Linux: [cafe-kiosk-rpi_1.0.8_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.8/cafe-kiosk-rpi_1.0.8_all.deb)
+- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.0.8.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.8/CafeKiosk-Windows-Portable-1.0.8.zip)
 
 릴리즈 페이지:
-[Cafe Kiosk v1.0.7](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.0.7)
+[Cafe Kiosk v1.0.8](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.0.8)
 
 ## 설치 방법
 
 Windows:
 
-1. `CafeKiosk-Windows-Setup-1.0.7.exe`를 다운로드합니다.
+1. `CafeKiosk-Windows-Setup-1.0.8.exe`를 다운로드합니다.
 2. 설치 파일을 실행합니다.
 3. 설치가 끝나면 바탕화면의 `BEAN & BREW Cafe Kiosk` 바로가기로 실행합니다.
 
@@ -38,11 +38,11 @@ Windows에서 SmartScreen 경고가 표시될 수 있습니다. 개인 개발자
 
 Raspberry Pi / Linux:
 
-1. `cafe-kiosk-rpi_1.0.7_all.deb`를 다운로드합니다.
+1. `cafe-kiosk-rpi_1.0.8_all.deb`를 다운로드합니다.
 2. 파일이 있는 폴더에서 아래 명령을 실행합니다.
 
 ```bash
-sudo apt install ./cafe-kiosk-rpi_1.0.7_all.deb
+sudo apt install ./cafe-kiosk-rpi_1.0.8_all.deb
 cafe-kiosk
 ```
 
@@ -263,11 +263,13 @@ Dialogflow를 사용하려면 Google Cloud 서비스 계정 JSON 파일이 필�
 - 주변 소음 재보정
 - 품절 관리
 - 할인 설정
-- GitHub 업데이트 확인 및 적용
+- GitHub Releases 기반 업데이트 확인 및 설치 파일 적용
 - 오늘 매출, 인기 메뉴, 음성 인식 실패 로그 확인
 - 통계 내역 초기화
 
 할인 설정은 메뉴별로 직접 할인 가격을 입력하거나 할인율(%)을 지정하는 방식으로 사용할 수 있습니다.
+
+업데이트 기능은 프로그램 시작 시 최신 릴리스를 자동 확인하고, 새 버전이 있으면 설정 버튼을 강조합니다. 설정 창의 업데이트 버튼을 누르면 Windows 설치형은 최신 Setup EXE, Windows 포터블은 최신 ZIP, Raspberry Pi/Linux는 최신 deb 파일을 다운로드하고 SHA256 검증 후 적용을 시작합니다.
 
 ## 제작자
 
