@@ -1,0 +1,121 @@
+# BEAN & BREW Cafe Kiosk - Windows installer
+# Run:
+#   powershell -ExecutionPolicy Bypass -File .\install_windows.ps1
+
+[CmdletBinding()]
+param(
+    [switch]$NoShortcut,
+    [switch]$SkipDeps
+)
+
+$ErrorActionPreference = "Stop"
+$RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$VenvDir = Join-Path $RepoRoot ".venv-windows"
+$ReqFile = Join-Path $RepoRoot "requirements-windows.txt"
+$MainFile = Join-Path $RepoRoot "cafe_kiosk\cafe_kiosk_final.py"
+$Launcher = Join-Path $RepoRoot "run_windows.cmd"
+
+function Write-Step {
+    param([string]$Message)
+    Write-Host ""
+    Write-Host "==> $Message" -ForegroundColor Cyan
+}
+
+function Test-CommandOk {
+    param([string]$Exe, [string[]]$Arguments)
+    try {
+        $output = & $Exe @Arguments -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"
+        if ($LASTEXITCODE -eq 0 -and $output) {
+            return $true
+        }
+    } catch {
+        return $false
+    }
+    return $false
+}
+
+function Invoke-Native {
+    param([string]$Exe, [string[]]$Arguments)
+    & $Exe @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "명령 실행 실패: $Exe $($Arguments -join ' ')"
+    }
+}
+
+function Get-PythonCommand {
+    $candidates = @(
+        @{ Exe = "py"; Args = @("-3.13") },
+        @{ Exe = "py"; Args = @("-3") },
+        @{ Exe = "python"; Args = @() }
+    )
+
+    foreach ($candidate in $candidates) {
+        if (Test-CommandOk -Exe $candidate.Exe -Arguments $candidate.Args) {
+            return $candidate
+        }
+    }
+    throw "Python을 찾을 수 없습니다. Python 3.13.12 설치 후 다시 실행해 주세요."
+}
+
+if (!(Test-Path -LiteralPath $MainFile)) {
+    throw "메인 파일을 찾을 수 없습니다: $MainFile"
+}
+
+if (!(Test-Path -LiteralPath $ReqFile)) {
+    throw "requirements 파일을 찾을 수 없습니다: $ReqFile"
+}
+
+Write-Host "BEAN & BREW Cafe Kiosk Windows 설치를 시작합니다." -ForegroundColor Green
+Write-Host "설치 위치: $RepoRoot"
+
+$python = Get-PythonCommand
+$PythonExe = $python.Exe
+$PythonArgs = @($python.Args)
+Write-Step "Python 확인"
+Invoke-Native -Exe $PythonExe -Arguments ($PythonArgs + @("-c", "import sys; print('Python', sys.version)"))
+
+if (!(Test-Path -LiteralPath $VenvDir)) {
+    Write-Step "가상환경 생성"
+    Invoke-Native -Exe $PythonExe -Arguments ($PythonArgs + @("-m", "venv", $VenvDir))
+} else {
+    Write-Step "기존 가상환경 사용"
+}
+
+$VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+if (!(Test-Path -LiteralPath $VenvPython)) {
+    throw "가상환경 Python을 찾을 수 없습니다: $VenvPython"
+}
+
+if (!$SkipDeps) {
+    Write-Step "pip 업데이트"
+    Invoke-Native -Exe $VenvPython -Arguments @("-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel")
+
+    Write-Step "Windows 의존성 설치"
+    Invoke-Native -Exe $VenvPython -Arguments @("-m", "pip", "install", "-r", $ReqFile)
+} else {
+    Write-Step "의존성 설치 건너뜀"
+}
+
+Write-Step "실행 파일 확인"
+if (!(Test-Path -LiteralPath $Launcher)) {
+    throw "실행 배치 파일을 찾을 수 없습니다: $Launcher"
+}
+
+if (!$NoShortcut) {
+    Write-Step "바탕화면 바로가기 생성"
+    $Desktop = [Environment]::GetFolderPath("Desktop")
+    $ShortcutPath = Join-Path $Desktop "BEAN & BREW Cafe Kiosk.lnk"
+    $WScriptShell = New-Object -ComObject WScript.Shell
+    $Shortcut = $WScriptShell.CreateShortcut($ShortcutPath)
+    $Shortcut.TargetPath = $Launcher
+    $Shortcut.WorkingDirectory = $RepoRoot
+    $Shortcut.Description = "BEAN & BREW Cafe Kiosk"
+    $Shortcut.Save()
+    Write-Host "바로가기 생성 완료: $ShortcutPath" -ForegroundColor Green
+}
+
+Write-Step "설치 완료"
+Write-Host "실행 방법:" -ForegroundColor Green
+Write-Host "  .\run_windows.cmd"
+Write-Host ""
+Write-Host "설정 창의 업데이트 버튼은 Git이 설치되어 있고 이 폴더가 Git 저장소일 때 동작합니다."

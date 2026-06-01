@@ -80,6 +80,10 @@ Edge TTS는 반복 안내 문구를 `cafe_kiosk/tts_cache`에 캐시하여 다�
 ├── README.md
 ├── requirements-windows.txt
 ├── requirements-rpi.txt
+├── install_windows.ps1
+├── install_raspberry_pi.sh
+├── run_windows.cmd
+├── run_raspberry_pi.sh
 └── cafe_kiosk/
     ├── cafe_kiosk_final.py
     ├── 설치및사용법.txt
@@ -96,6 +100,32 @@ cafe_kiosk/cafe_kiosk_final.py
 ```
 
 ## 빠른 실행
+
+간편 설치를 원하는 경우 아래 설치 파일을 먼저 실행하세요.
+
+Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install_windows.ps1
+.\run_windows.cmd
+```
+
+Raspberry Pi / Linux:
+
+```bash
+bash install_raspberry_pi.sh
+bash run_raspberry_pi.sh
+```
+
+Raspberry Pi에서 부팅 시 자동 실행까지 등록하려면 다음처럼 실행합니다.
+
+```bash
+CAFE_KIOSK_AUTOSTART=1 bash install_raspberry_pi.sh
+```
+
+설치 파일은 가상환경을 만들고 필요한 패키지를 설치한 뒤 실행 바로가기를 생성합니다.
+
+수동 실행:
 
 Windows:
 

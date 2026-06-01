@@ -10,6 +10,8 @@ dist/
 
 # Virtual environments
 .venv/
+.venv-windows/
+.venv-rpi/
 venv/
 env/
 ENV/
