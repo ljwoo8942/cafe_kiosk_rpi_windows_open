@@ -15,6 +15,8 @@ $ReqFile = Join-Path $RepoRoot "requirements-windows.txt"
 $MainFile = Join-Path $RepoRoot "cafe_kiosk\cafe_kiosk_final.py"
 $Launcher = Join-Path $RepoRoot "run_windows.cmd"
 $PythonWingetId = "Python.Python.3.13"
+$MinPython = [version]"3.10.0"
+$MaxPythonExclusive = [version]"3.14.0"
 
 function Write-Step {
     param([string]$Message)
@@ -27,7 +29,8 @@ function Test-CommandOk {
     try {
         $output = & $Exe @Arguments -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"
         if ($LASTEXITCODE -eq 0 -and $output) {
-            return $true
+            $version = [version]($output | Select-Object -First 1)
+            return ($version -ge $MinPython -and $version -lt $MaxPythonExclusive)
         }
     } catch {
         return $false
