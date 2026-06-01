@@ -14,6 +14,7 @@ $VenvDir = Join-Path $RepoRoot ".venv-windows"
 $ReqFile = Join-Path $RepoRoot "requirements-windows.txt"
 $MainFile = Join-Path $RepoRoot "cafe_kiosk\cafe_kiosk_final.py"
 $Launcher = Join-Path $RepoRoot "run_windows.cmd"
+$PythonWingetId = "Python.Python.3.13"
 
 function Write-Step {
     param([string]$Message)
@@ -42,6 +43,25 @@ function Invoke-Native {
     }
 }
 
+function Install-PythonWithWinget {
+    $winget = Get-Command "winget.exe" -ErrorAction SilentlyContinue
+    if (!$winget) {
+        return $false
+    }
+
+    Write-Step "Python 3.13 자동 설치"
+    Write-Host "Python이 없어 winget으로 Python 3.13을 설치합니다."
+    & $winget.Source install --id $PythonWingetId -e --accept-source-agreements --accept-package-agreements
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "winget Python 설치 실패" -ForegroundColor Yellow
+        return $false
+    }
+
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+                [System.Environment]::GetEnvironmentVariable("Path", "User")
+    return $true
+}
+
 function Get-PythonCommand {
     $candidates = @(
         @{ Exe = "py"; Args = @("-3.13") },
@@ -54,7 +74,17 @@ function Get-PythonCommand {
             return $candidate
         }
     }
-    throw "Python을 찾을 수 없습니다. Python 3.13.12 설치 후 다시 실행해 주세요."
+
+    if (Install-PythonWithWinget) {
+        foreach ($candidate in $candidates) {
+            if (Test-CommandOk -Exe $candidate.Exe -Arguments $candidate.Args) {
+                return $candidate
+            }
+        }
+    }
+
+    Start-Process "https://www.python.org/downloads/windows/"
+    throw "Python을 찾을 수 없습니다. Python 3.13 설치 후 이 설치/복구 파일을 다시 실행해 주세요."
 }
 
 if (!(Test-Path -LiteralPath $MainFile)) {

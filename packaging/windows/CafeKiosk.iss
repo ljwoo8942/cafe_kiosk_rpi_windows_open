@@ -39,4 +39,4 @@ Name: "{group}\BEAN & BREW Cafe Kiosk"; Filename: "{app}\run_windows.cmd"; Worki
 Name: "{group}\설치/복구 실행"; Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\install_windows.ps1"""; WorkingDir: "{app}"
 
 [Run]
-Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\install_windows.ps1"" -NoShortcut"; WorkingDir: "{app}"; Description: "필수 Python 패키지 설치"; Flags: postinstall runascurrentuser
+Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\install_windows.ps1"" -NoShortcut"; WorkingDir: "{app}"; StatusMsg: "필수 Python 패키지를 설치하는 중입니다..."; Flags: runascurrentuser
