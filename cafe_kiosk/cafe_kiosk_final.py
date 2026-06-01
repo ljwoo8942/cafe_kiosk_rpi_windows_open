@@ -324,9 +324,9 @@ def _rpi_touch_monitor_pair(monitors: list[dict[str, int | str]]
 # 메인 스레드에서 초기화하면 runAndWait() 이후 두 번째 음성부터 무음이 되는 문제 발생
 tts_engine = None   # 워커 스레드 시작 후 해당 스레드 안에서 할당됨
 
-APP_SETTINGS_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "cafe_kiosk_settings.json"
-)
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(APP_DIR)
+APP_SETTINGS_PATH = os.path.join(APP_DIR, "cafe_kiosk_settings.json")
 
 
 def _load_app_settings() -> dict:
@@ -3334,6 +3334,318 @@ def reset_admin_stats_history() -> bool:
         conn.close()
 
 
+def _find_update_repo_dir() -> str | None:
+    """현재 실행 파일 기준으로 Git 업데이트가 가능한 저장소 루트를 찾는다."""
+    for path in (PROJECT_DIR, APP_DIR):
+        if os.path.isdir(os.path.join(path, ".git")):
+            return path
+    return None
+
+
+def _git_command(repo_dir: str, args: list[str], timeout: int = 60
+                 ) -> tuple[int, str, str]:
+    """Git 명령을 GUI가 멈추지 않도록 백그라운드 스레드에서 호출하기 위한 래퍼."""
+    git_exe = shutil.which("git")
+    if not git_exe:
+        return 127, "", "git 명령을 찾을 수 없습니다."
+
+    env = os.environ.copy()
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    flags = subprocess.CREATE_NO_WINDOW if IS_WINDOWS and hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+    try:
+        proc = subprocess.run(
+            [git_exe, *args],
+            cwd=repo_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            creationflags=flags,
+        )
+        return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
+    except subprocess.TimeoutExpired:
+        return 124, "", "GitHub 응답 시간이 초과되었습니다."
+    except OSError as exc:
+        return 1, "", str(exc)
+
+
+def _git_result_text(code: int, out: str, err: str) -> str:
+    """사용자에게 보여줄 Git 오류 메시지를 정리한다."""
+    text = "\n".join(part for part in (out, err) if part).strip()
+    return text or f"git 명령 실패 (code={code})"
+
+
+def _check_update_status() -> dict:
+    """origin 원격 저장소 기준 업데이트 가능 여부를 확인한다."""
+    repo_dir = _find_update_repo_dir()
+    if repo_dir is None:
+        return {
+            "ok": False,
+            "message": "Git 저장소(.git)를 찾을 수 없습니다.",
+            "detail": "압축 파일이나 설치 파일로 배포한 경우에는 Git 자동 업데이트를 사용할 수 없습니다.",
+        }
+
+    code, out, err = _git_command(repo_dir, ["rev-parse", "--abbrev-ref", "HEAD"], timeout=15)
+    if code != 0:
+        return {"ok": False, "message": "현재 브랜치를 확인하지 못했습니다.",
+                "detail": _git_result_text(code, out, err), "repo": repo_dir}
+    branch = out.strip() or "main"
+    if branch == "HEAD":
+        branch = "main"
+
+    code, remote_url, err = _git_command(repo_dir, ["config", "--get", "remote.origin.url"], timeout=15)
+    if code != 0 or not remote_url:
+        return {"ok": False, "message": "origin 원격 저장소가 설정되어 있지 않습니다.",
+                "detail": _git_result_text(code, remote_url, err), "repo": repo_dir}
+
+    code, out, err = _git_command(repo_dir, ["fetch", "--quiet", "origin"], timeout=90)
+    if code != 0:
+        return {"ok": False, "message": "GitHub에서 업데이트 정보를 가져오지 못했습니다.",
+                "detail": _git_result_text(code, out, err), "repo": repo_dir}
+
+    code, upstream, err = _git_command(
+        repo_dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], timeout=15
+    )
+    if code != 0 or not upstream:
+        upstream = f"origin/{branch}"
+        code, out, err = _git_command(repo_dir, ["rev-parse", "--verify", upstream], timeout=15)
+        if code != 0:
+            return {"ok": False, "message": "현재 브랜치의 원격 기준점을 찾지 못했습니다.",
+                    "detail": _git_result_text(code, out, err), "repo": repo_dir}
+
+    code, local, err = _git_command(repo_dir, ["rev-parse", "HEAD"], timeout=15)
+    if code != 0:
+        return {"ok": False, "message": "현재 커밋을 확인하지 못했습니다.",
+                "detail": _git_result_text(code, local, err), "repo": repo_dir}
+
+    code, remote, err = _git_command(repo_dir, ["rev-parse", upstream], timeout=15)
+    if code != 0:
+        return {"ok": False, "message": "원격 커밋을 확인하지 못했습니다.",
+                "detail": _git_result_text(code, remote, err), "repo": repo_dir}
+
+    code, base, err = _git_command(repo_dir, ["merge-base", "HEAD", upstream], timeout=15)
+    if code != 0:
+        return {"ok": False, "message": "업데이트 비교 기준을 만들지 못했습니다.",
+                "detail": _git_result_text(code, base, err), "repo": repo_dir}
+
+    local = local.strip()
+    remote = remote.strip()
+    base = base.strip()
+    if local == remote:
+        state = "current"
+        message = "이미 최신 버전입니다."
+    elif local == base:
+        state = "behind"
+        message = "새 업데이트가 있습니다."
+    elif remote == base:
+        state = "ahead"
+        message = "로컬 코드가 원격보다 앞서 있습니다."
+    else:
+        state = "diverged"
+        message = "로컬 코드와 원격 코드가 서로 달라 자동 업데이트할 수 없습니다."
+
+    return {
+        "ok": True,
+        "repo": repo_dir,
+        "branch": branch,
+        "upstream": upstream,
+        "remote_url": remote_url,
+        "state": state,
+        "message": message,
+        "local": local[:12],
+        "remote": remote[:12],
+    }
+
+
+def _apply_update(repo_dir: str, upstream: str) -> dict:
+    """로컬 변경이 없을 때만 fast-forward 업데이트를 적용한다."""
+    code, out, err = _git_command(repo_dir, ["status", "--porcelain"], timeout=20)
+    if code != 0:
+        return {"ok": False, "message": "로컬 변경사항을 확인하지 못했습니다.",
+                "detail": _git_result_text(code, out, err)}
+    if out.strip():
+        return {
+            "ok": False,
+            "message": "로컬 변경사항이 있어 자동 업데이트를 중단했습니다.",
+            "detail": "Git에 커밋되지 않은 변경사항을 먼저 정리한 뒤 다시 시도해 주세요.",
+        }
+
+    branch = upstream.split("/", 1)[-1]
+    code, out, err = _git_command(repo_dir, ["pull", "--ff-only", "origin", branch], timeout=120)
+    if code != 0:
+        return {"ok": False, "message": "업데이트 적용에 실패했습니다.",
+                "detail": _git_result_text(code, out, err)}
+    return {"ok": True, "message": "업데이트가 완료되었습니다.",
+            "detail": (out or "최신 코드를 내려받았습니다. 프로그램을 다시 시작해 주세요.")}
+
+
+def show_update_popup(root: tk.Tk) -> None:
+    """GitHub 저장소 기준으로 코드 업데이트를 확인하고 적용하는 팝업."""
+    existing = _existing_popup(show_update_popup)
+    if existing is not None:
+        _safe_lift(existing, root)
+        return
+
+    owner = _popup_owner(root)
+    popup = tk.Toplevel(owner)
+    popup.title("업데이트")
+    popup.resizable(False, False)
+    popup.configure(bg="#102033")
+    _setup_modal_popup(popup, owner)
+
+    pw = min(620, owner.winfo_screenwidth() - 40)
+    ph = min(470, owner.winfo_screenheight() - 30)
+    _center_popup_on_owner(popup, owner, pw, ph)
+    show_update_popup._popup = popup
+
+    state = {"busy": False, "repo": None, "upstream": None, "can_apply": False}
+    status_var = tk.StringVar(value="업데이트 확인 버튼을 눌러 최신 버전을 확인하세요.")
+
+    outer = tk.Frame(popup, bg="#102033", padx=_px(18), pady=_px(16))
+    outer.pack(fill="both", expand=True)
+    outer.grid_columnconfigure(0, weight=1)
+    outer.grid_rowconfigure(2, weight=1)
+
+    tk.Label(outer, text="업데이트",
+             font=(FONT_UI, _fs(18), "bold"),
+             bg="#102033", fg="#ffffff").grid(row=0, column=0, sticky="w", pady=(0, _px(8)))
+
+    tk.Label(outer, textvariable=status_var,
+             font=(FONT_UI, _fs(10), "bold"),
+             bg="#102033", fg="#7ecfff", anchor="w",
+             wraplength=max(280, pw - _px(44)), justify="left"
+             ).grid(row=1, column=0, sticky="ew", pady=(0, _px(10)))
+
+    log_box = tk.Text(outer, width=64, height=10,
+                      font=(FONT_UI, _fs(9)),
+                      bg="#0d1b2a", fg="#eaeaea",
+                      relief="flat", bd=0, padx=_px(10), pady=_px(10),
+                      wrap="word")
+    log_box.grid(row=2, column=0, sticky="nsew")
+
+    button_row = tk.Frame(outer, bg="#102033")
+    button_row.grid(row=3, column=0, sticky="ew", pady=(_px(12), 0))
+    button_row.columnconfigure(0, weight=1)
+    button_row.columnconfigure(1, weight=1)
+    button_row.columnconfigure(2, weight=1)
+
+    def _write_log(text: str) -> None:
+        log_box.config(state="normal")
+        log_box.delete("1.0", "end")
+        log_box.insert("end", text.strip() + "\n")
+        log_box.config(state="disabled")
+
+    def _set_busy(busy: bool) -> None:
+        state["busy"] = busy
+        check_btn.config(state="disabled" if busy else "normal")
+        apply_btn.config(state="disabled" if busy or not state["can_apply"] else "normal")
+
+    def _finish_check(result: dict) -> None:
+        state["repo"] = result.get("repo")
+        state["upstream"] = result.get("upstream")
+        state["can_apply"] = bool(result.get("ok") and result.get("state") == "behind")
+        _set_busy(False)
+        status_var.set(str(result.get("message", "업데이트 확인을 완료했습니다.")))
+
+        if result.get("ok"):
+            detail = (
+                f"저장소: {result.get('repo', '-')}\n"
+                f"원격: {result.get('remote_url', '-')}\n"
+                f"브랜치: {result.get('branch', '-')}\n"
+                f"기준점: {result.get('upstream', '-')}\n"
+                f"현재 버전: {result.get('local', '-')}\n"
+                f"원격 버전: {result.get('remote', '-')}\n"
+            )
+            if result.get("state") == "behind":
+                detail += "\n업데이트 적용 버튼을 누르면 최신 코드를 내려받습니다.\n적용 후 프로그램을 다시 시작해 주세요."
+            elif result.get("state") in ("ahead", "diverged"):
+                detail += "\n로컬 코드 상태 때문에 자동 업데이트는 진행하지 않습니다."
+            _write_log(detail)
+        else:
+            _write_log(str(result.get("detail", "")))
+
+    def _start_check() -> None:
+        if state["busy"]:
+            return
+        state["can_apply"] = False
+        _set_busy(True)
+        status_var.set("GitHub에서 업데이트 정보를 확인하는 중입니다...")
+        _write_log("잠시만 기다려 주세요.")
+
+        def _worker() -> None:
+            result = _check_update_status()
+            popup.after(0, lambda: _finish_check(result) if _widget_exists(popup) else None)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _finish_apply(result: dict) -> None:
+        state["can_apply"] = False
+        _set_busy(False)
+        status_var.set(str(result.get("message", "업데이트 작업을 완료했습니다.")))
+        _write_log(str(result.get("detail", "")))
+        if result.get("ok"):
+            speak("업데이트가 완료되었습니다. 프로그램을 다시 시작해 주세요.")
+            messagebox.showinfo("업데이트", "업데이트가 완료되었습니다.\n프로그램을 다시 시작해 주세요.", parent=popup)
+        else:
+            messagebox.showwarning("업데이트", str(result.get("message", "업데이트에 실패했습니다.")), parent=popup)
+
+    def _start_apply() -> None:
+        if state["busy"] or not state["can_apply"]:
+            return
+        repo_dir = state.get("repo")
+        upstream = state.get("upstream")
+        if not repo_dir or not upstream:
+            messagebox.showwarning("업데이트", "먼저 업데이트 확인을 실행해 주세요.", parent=popup)
+            return
+        ok = messagebox.askyesno(
+            "업데이트 적용",
+            "최신 코드를 내려받습니다.\n완료 후 프로그램을 다시 시작해야 합니다.\n계속할까요?",
+            parent=popup
+        )
+        if not ok:
+            return
+        _set_busy(True)
+        status_var.set("업데이트를 적용하는 중입니다...")
+        _write_log("로컬 변경사항을 확인한 뒤 최신 코드를 내려받습니다.")
+
+        def _worker() -> None:
+            result = _apply_update(str(repo_dir), str(upstream))
+            popup.after(0, lambda: _finish_apply(result) if _widget_exists(popup) else None)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    check_btn = tk.Button(button_row, text="업데이트 확인",
+                          font=(FONT_UI, _fs(10), "bold"),
+                          bg="#2563eb", fg="white",
+                          activebackground="#1d4ed8", activeforeground="white",
+                          relief="flat", padx=_px(12), pady=_px(7), cursor="hand2",
+                          command=_start_check)
+    check_btn.grid(row=0, column=0, sticky="ew", padx=(0, _px(6)))
+
+    apply_btn = tk.Button(button_row, text="업데이트 적용",
+                          font=(FONT_UI, _fs(10), "bold"),
+                          bg="#16a34a", fg="white",
+                          activebackground="#15803d", activeforeground="white",
+                          relief="flat", padx=_px(12), pady=_px(7), cursor="hand2",
+                          state="disabled", command=_start_apply)
+    apply_btn.grid(row=0, column=1, sticky="ew", padx=(_px(3), _px(3)))
+
+    tk.Button(button_row, text="닫기",
+              font=(FONT_UI, _fs(10), "bold"),
+              bg="#e94560", fg="white",
+              activebackground="#c73652", activeforeground="white",
+              relief="flat", padx=_px(12), pady=_px(7), cursor="hand2",
+              command=popup.destroy).grid(row=0, column=2, sticky="ew", padx=(_px(6), 0))
+
+    _write_log(
+        "GitHub에 올린 최신 코드를 내려받는 기능입니다.\n"
+        "Git으로 받은 저장소에서 실행 중일 때 사용할 수 있습니다.\n"
+        "업데이트 적용 후에는 프로그램을 다시 시작해야 새 코드가 반영됩니다."
+    )
+
+
 def show_admin_stats_popup(root: tk.Tk) -> None:
     """관리자 통계 팝업을 표시한다."""
     existing = _existing_popup(show_admin_stats_popup)
@@ -4717,6 +5029,14 @@ class CafeKioskApp:
                   relief="flat", padx=_px(8), pady=_px(5), cursor="hand2",
                   command=lambda: show_admin_stats_popup(win)
                   ).grid(row=0, column=1, sticky="ew", padx=(_px(4), 0))
+
+        tk.Button(outer, text="업데이트",
+                  font=(FONT_UI, _fs(10), "bold"),
+                  bg="#16a34a", fg="white",
+                  activebackground="#15803d", activeforeground="white",
+                  relief="flat", padx=_px(8), pady=_px(5), cursor="hand2",
+                  command=lambda: show_update_popup(win)
+                  ).pack(fill="x", pady=(0, _px(10)))
 
         mic_frame = tk.Frame(outer, bg=SETTINGS_BG)
         mic_frame.pack(fill="x", pady=(0, _px(8)))
