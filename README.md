@@ -15,14 +15,36 @@ Raspberry Pi에서는 `xrandr`로 연결된 모니터 크기와 위치를 감지
 
 ## 다운로드
 
-최신 설치 파일은 GitHub Releases에서 받을 수 있습니다.
+최신 설치 파일은 GitHub Releases에서 받을 수 있습니다. 일반 사용자는 아래 파일만 다운로드하면 됩니다.
 
-- [Windows 설치 파일 다운로드](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.0/CafeKiosk-Windows-Setup-1.0.0.exe)
-- [Windows portable zip 다운로드](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.0/CafeKiosk-Windows-Portable-1.0.0.zip)
-- [Raspberry Pi / Linux deb 다운로드](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.0/cafe-kiosk-rpi_1.0.0_all.deb)
+- Windows: [CafeKiosk-Windows-Setup-1.0.0.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.0/CafeKiosk-Windows-Setup-1.0.0.exe)
+- Raspberry Pi / Linux: [cafe-kiosk-rpi_1.0.0_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.0/cafe-kiosk-rpi_1.0.0_all.deb)
+- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.0.0.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.0/CafeKiosk-Windows-Portable-1.0.0.zip)
 
 릴리즈 페이지:
 [Cafe Kiosk v1.0.0](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.0.0)
+
+## 설치 방법
+
+Windows:
+
+1. `CafeKiosk-Windows-Setup-1.0.0.exe`를 다운로드합니다.
+2. 설치 파일을 실행합니다.
+3. 설치가 끝나면 바탕화면의 `BEAN & BREW Cafe Kiosk` 바로가기로 실행합니다.
+
+Windows에서 SmartScreen 경고가 표시될 수 있습니다. 개인 개발자가 배포한 서명되지 않은 설치 파일에서 발생할 수 있으며, 실행하려면 `추가 정보`를 누른 뒤 `실행`을 선택합니다.
+
+Raspberry Pi / Linux:
+
+1. `cafe-kiosk-rpi_1.0.0_all.deb`를 다운로드합니다.
+2. 파일이 있는 폴더에서 아래 명령을 실행합니다.
+
+```bash
+sudo apt install ./cafe-kiosk-rpi_1.0.0_all.deb
+cafe-kiosk
+```
+
+설치 중 인터넷 연결이 필요할 수 있습니다. Python 패키지, TTS, 마이크 관련 구성요소를 설치하기 때문입니다.
 
 ## 주요 기능
 
@@ -82,7 +104,7 @@ TTS는 설정에서 엔진을 선택할 수 있습니다.
 - Windows SAPI5
 - espeak-ng
 
-Edge TTS는 반복 안내 문구를 `cafe_kiosk/tts_cache`에 캐시하여 다음 실행 후에도 빠르게 재생할 수 있도록 구성되어 있습니다. 볼륨, 속도, 피치, TTS 엔진, TTS 음성, 마이크 선택은 `cafe_kiosk/cafe_kiosk_settings.json`에 저장되어 다음 실행 시 다시 불러옵니다.
+Edge TTS는 반복 안내 문구를 캐시하여 다음 실행 후에도 빠르게 재생할 수 있도록 구성되어 있습니다. 볼륨, 속도, 피치, TTS 엔진, TTS 음성, 마이크 선택은 프로그램 설정으로 저장되어 다음 실행 시 다시 불러옵니다.
 
 ## 프로젝트 구조
 
@@ -114,9 +136,9 @@ Edge TTS는 반복 안내 문구를 `cafe_kiosk/tts_cache`에 캐시하여 다�
 cafe_kiosk/cafe_kiosk_final.py
 ```
 
-## 빠른 실행
+## 개발자용 실행
 
-간편 설치를 원하는 경우 아래 설치 파일을 먼저 실행하세요.
+소스코드를 직접 내려받아 실행하려면 아래 명령을 사용합니다.
 
 Windows:
 
@@ -140,7 +162,32 @@ CAFE_KIOSK_AUTOSTART=1 bash install_raspberry_pi.sh
 
 설치 파일은 가상환경을 만들고 필요한 패키지를 설치한 뒤 실행 바로가기를 생성합니다.
 
-## 배포 패키지 만들기
+수동 실행:
+
+Windows:
+
+```powershell
+py -3.13 -m pip install -r requirements-windows.txt
+py -3.13 cafe_kiosk/cafe_kiosk_final.py
+```
+
+Raspberry Pi / Linux:
+
+```bash
+python3 -m venv ~/venv-cafe
+source ~/venv-cafe/bin/activate
+python -m pip install --upgrade pip setuptools wheel
+pip install -r requirements-rpi.txt
+python cafe_kiosk/cafe_kiosk_final.py
+```
+
+Raspberry Pi에서는 `PyAudio`, `tkinter`, `ImageTk`, `mpg123`, `espeak-ng`, 한글/이모지 폰트처럼 `apt`로 먼저 설치해야 하는 패키지가 있습니다. 자세한 명령은 아래 문서를 확인하세요.
+
+```text
+cafe_kiosk/설치및사용법.txt
+```
+
+## 개발자용 배포 패키지 만들기
 
 Windows 설치 EXE 또는 portable zip 생성:
 
@@ -176,31 +223,6 @@ cafe-kiosk
 ```
 
 배포 산출물은 `dist/` 폴더에 만들어지며 Git에는 포함하지 않습니다.
-
-수동 실행:
-
-Windows:
-
-```powershell
-py -3.13 -m pip install -r requirements-windows.txt
-py -3.13 cafe_kiosk/cafe_kiosk_final.py
-```
-
-Raspberry Pi / Linux:
-
-```bash
-python3 -m venv ~/venv-cafe
-source ~/venv-cafe/bin/activate
-python -m pip install --upgrade pip setuptools wheel
-pip install -r requirements-rpi.txt
-python cafe_kiosk/cafe_kiosk_final.py
-```
-
-Raspberry Pi에서는 `PyAudio`, `tkinter`, `ImageTk`, `mpg123`, `espeak-ng`, 한글/이모지 폰트처럼 `apt`로 먼저 설치해야 하는 패키지가 있습니다. 자세한 명령은 아래 문서를 확인하세요.
-
-```text
-cafe_kiosk/설치및사용법.txt
-```
 
 ## 환경별 의존성
 
