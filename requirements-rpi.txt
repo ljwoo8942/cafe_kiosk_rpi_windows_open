@@ -1,0 +1,112 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ☕ BEAN & BREW 카페 주문 시스템  — Raspberry Pi / Linux 전용
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# [권장 환경]
+#   Raspberry Pi OS Bookworm (64-bit) / Ubuntu 22.04+
+#   Python 3.9 ~ 3.12   (Bookworm 기본 3.11, 3.12 도 지원)
+#
+# [중요]
+#   requirements-rpi.txt 는 pip 패키지만 설치합니다.
+#   PyAudio, tkinter, ImageTk, TTS 재생기처럼 apt 가 필요한 구성요소는
+#   아래 1단계 시스템 패키지를 먼저 설치해야 합니다.
+#
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ★ 1단계 — 시스템 패키지 설치 (반드시 먼저 실행) ★
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+#   sudo apt update
+#   sudo apt install -y \
+#        python3-tk               `# tkinter GUI` \
+#        python3-pip              `# pip 패키지 관리자` \
+#        python3-venv             `# 가상환경 생성` \
+#        python3-dev              `# PyAudio 등 C 확장 빌드` \
+#        build-essential          `# gcc / make 등 빌드 도구` \
+#        pkg-config               `# 빌드 시 라이브러리 경로 감지` \
+#        x11-xserver-utils        `# xrandr 모니터 자동 감지` \
+#        alsa-utils               `# aplay / arecord 오디오 확인` \
+#        portaudio19-dev          `# PyAudio 빌드 의존성` \
+#        libportaudio2            `# PortAudio 런타임` \
+#        libportaudiocpp0         `# PortAudio C++ 런타임` \
+#        libasound2-dev           `# ALSA 사운드` \
+#        mpg123                   `# Edge TTS mp3 재생` \
+#        espeak-ng                `# pyttsx3 / TTS 폴백 엔진` \
+#        espeak-ng-data           `# espeak-ng 한국어 음성` \
+#        fonts-noto-cjk           `# 한글 폰트` \
+#        fonts-noto-color-emoji   `# 이모지 폰트` \
+#        python3-pil              `# Pillow (apt 버전)` \
+#        python3-pil.imagetk      `# Pillow + tkinter 연동` \
+#        libjpeg-dev zlib1g-dev   `# Pillow pip 빌드 대비`
+#
+#   ※ PyAudio pip 빌드가 계속 실패하면 apt 버전을 사용:
+#      sudo apt install -y python3-pyaudio
+#      단, 가상환경에서 apt PyAudio 를 쓰려면 아래처럼 생성해야 합니다.
+#      python3 -m venv --system-site-packages ~/venv-cafe
+#
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ★ 2단계 — Python 패키지 설치 ★
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+#   pip3 install -r requirements-rpi.txt
+#
+#   ※ Bookworm 이후는 PEP 668 (외부 관리 환경) 보호로
+#      system-wide pip 설치가 차단됩니다. 아래 중 택1:
+#
+#   [방법 A] 가상환경 사용 (권장)
+#       python3 -m venv ~/venv-cafe
+#       source ~/venv-cafe/bin/activate
+#       python -m pip install --upgrade pip setuptools wheel
+#       pip install -r requirements-rpi.txt
+#
+#   [방법 A-2] PyAudio 를 apt 로 설치해야 하는 경우
+#       sudo apt install -y python3-pyaudio
+#       python3 -m venv --system-site-packages ~/venv-cafe
+#       source ~/venv-cafe/bin/activate
+#       python -m pip install --upgrade pip setuptools wheel
+#       pip install -r requirements-rpi.txt
+#
+#   [방법 B] 강제 설치 (비권장)
+#       pip3 install --break-system-packages --upgrade pip setuptools wheel
+#       pip3 install --break-system-packages -r requirements-rpi.txt
+#
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ★ 3단계 — 오디오 장치 확인 ★
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+#   aplay  -l        # 출력 장치 (TTS)
+#   arecord -l       # 입력 장치 (마이크)
+#   espeak-ng -v ko "안녕하세요"   # TTS 테스트
+#
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# ── pip 빌드 보조 도구 ─────────────────────────────────
+# 새 venv / Python 3.12 환경에서 PyAudio 등 C 확장 빌드 안정화
+setuptools>=65.5.0
+wheel>=0.41.0
+
+# ── 음성 인식 (Google STT) ─────────────────────────────
+SpeechRecognition>=3.10.0
+
+# ── 마이크 입력 (portaudio19-dev + libasound2-dev 선행 필수) ─
+# RPi 에서 pip 빌드 시 약 2~3 분 소요
+# 빌드 실패 시: sudo apt install -y python3-pyaudio
+PyAudio>=0.2.14
+
+# ── 오프라인 TTS (espeak-ng 폴백 사용) ─────────────────
+# 코드는 pyttsx3 한국어 음성이 없으면 espeak-ng 로 자동 폴백.
+# 한국어 TTS 를 위해 espeak-ng 와 espeak-ng-data 가 반드시 설치되어야 함.
+pyttsx3>=2.90
+
+# ── 온라인 TTS (우선 사용, 캐시 지원) ───────────────────
+# 코드가 자동/Edge TTS 설정일 때 edge-tts 를 우선 사용한다.
+# 재생을 위해 1단계에서 mpg123 설치가 필요하다.
+edge-tts>=7.0.0
+
+# ── 메뉴 이미지 로딩 ───────────────────────────────────
+# apt 의 python3-pil 이 구버전(≤8.x)이면 Image.ANTIALIAS 사용 (코드 자동 대응)
+# 최신 Resampling.LANCZOS 를 쓰려면 pip 버전 9.1+ 설치
+Pillow>=9.1.0
+
+# ── Dialogflow 자연어 인텐트 인식 ──────────────────────
+# RPi 4 / 5 에서는 정상 동작, RPi 3 이하에서는 gRPC 빌드 부담 큼
+google-cloud-dialogflow>=2.24.0
