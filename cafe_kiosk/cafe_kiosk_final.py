@@ -69,6 +69,8 @@ import shutil        # 외부 TTS/오디오 재생 명령 감지
 import tempfile      # Edge TTS 임시 음성 파일
 import hashlib       # Edge TTS 캐시 파일 키 생성
 import time          # TTS 종료 대기 후 안내창 초기화 타이밍 제어
+import urllib.request
+import urllib.error
 from datetime import datetime
 
 try:
@@ -94,6 +96,10 @@ if IS_LINUX and os.path.exists("/proc/device-tree/model"):
 
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(APP_DIR)
+APP_VERSION_FILE = os.path.join(PROJECT_DIR, "VERSION")
+GITHUB_REPO = "ljwoo8942/cafe_kiosk_rpi_windows_open"
+GITHUB_LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases"
 DIALOGFLOW_CREDENTIAL_FILENAME = "avis-fcwa-d608a6b1f702.json"
 DIALOGFLOW_DEFAULT_PROJECT_ID = "avis-fcwa"
 
@@ -3452,6 +3458,82 @@ def _find_update_repo_dir() -> str | None:
     return None
 
 
+def _current_app_version() -> str:
+    """설치된 앱 버전을 VERSION 파일에서 읽는다."""
+    try:
+        with open(APP_VERSION_FILE, "r", encoding="utf-8") as fp:
+            version = fp.read().strip()
+        return version or "0.0.0"
+    except OSError:
+        return "0.0.0"
+
+
+def _parse_version_tuple(value: str) -> tuple[int, ...]:
+    """v1.2.3 형태의 문자열을 비교 가능한 숫자 튜플로 변환한다."""
+    text = str(value or "").strip().lower()
+    if text.startswith("v"):
+        text = text[1:]
+    parts = re.findall(r"\d+", text)
+    if not parts:
+        return (0,)
+    return tuple(int(part) for part in parts[:4])
+
+
+def _is_newer_version(latest: str, current: str) -> bool:
+    """latest가 current보다 새 버전인지 비교한다."""
+    left = list(_parse_version_tuple(latest))
+    right = list(_parse_version_tuple(current))
+    length = max(len(left), len(right))
+    left += [0] * (length - len(left))
+    right += [0] * (length - len(right))
+    return tuple(left) > tuple(right)
+
+
+def _check_latest_release_status(timeout: int = 8) -> dict:
+    """GitHub Releases 기준으로 새 배포 버전이 있는지 가볍게 확인한다."""
+    current = _current_app_version()
+    request = urllib.request.Request(
+        GITHUB_LATEST_RELEASE_API,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "BEAN-BREW-Cafe-Kiosk",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = response.read(128 * 1024).decode("utf-8", errors="replace")
+        data = json.loads(payload)
+        latest_tag = str(data.get("tag_name") or data.get("name") or "").strip()
+        latest = latest_tag[1:] if latest_tag.lower().startswith("v") else latest_tag
+        html_url = str(data.get("html_url") or GITHUB_RELEASES_URL)
+        if not latest:
+            return {
+                "ok": False,
+                "available": False,
+                "message": "최신 릴리스 버전을 확인하지 못했습니다.",
+                "current": current,
+            }
+        available = _is_newer_version(latest, current)
+        return {
+            "ok": True,
+            "available": available,
+            "current": current,
+            "latest": latest,
+            "tag": latest_tag or f"v{latest}",
+            "url": html_url,
+            "message": (f"새 버전 v{latest} 사용 가능" if available
+                        else f"현재 최신 버전입니다. v{current}"),
+        }
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
+        return {
+            "ok": False,
+            "available": False,
+            "current": current,
+            "message": "업데이트 확인 실패",
+            "detail": str(exc),
+        }
+
+
 def _git_command(repo_dir: str, args: list[str], timeout: int = 60
                  ) -> tuple[int, str, str]:
     """Git 명령을 GUI가 멈추지 않도록 백그라운드 스레드에서 호출하기 위한 래퍼."""
@@ -4581,12 +4663,17 @@ class CafeKioskApp:
         self._log_reset_after_tts_job = None
         self._log_reset_generation = 0
         self._reset_log_on_next_interaction = False
+        self._settings_alert_buttons: list[tk.Button] = []
+        self._update_check_started = False
+        self._update_notice: dict | None = None
+        self._update_status_label = None
 
         # ── UI 빌드 ────────────────────────────────────
         self._build_ui()
 
         # ── 시작 인사 (이벤트 루프 시작 직후 1회) ────────
         self.root.after(0, self._startup_greeting)
+        self.root.after(3500, self._start_background_update_check)
 
     # ──────────────────────────────────────────────────
     # 7-1  UI 빌드 (container 에 모든 위젯 배치)
@@ -4889,17 +4976,97 @@ class CafeKioskApp:
     # 7-1b  설정 창 토글
     # ──────────────────────────────────────────────────
 
+    def register_settings_button(self, button: tk.Button) -> None:
+        """다른 주문 화면의 설정 버튼을 업데이트 알림 대상으로 등록한다."""
+        if button not in self._settings_alert_buttons:
+            self._settings_alert_buttons.append(button)
+        self._refresh_settings_update_highlight()
+
+    def _start_background_update_check(self) -> None:
+        """프로그램 시작 후 조용히 최신 릴리스 여부를 확인한다."""
+        if self._update_check_started:
+            return
+        self._update_check_started = True
+
+        def _worker() -> None:
+            result = _check_latest_release_status(timeout=8)
+            self.root.after(0, lambda: self._finish_background_update_check(result))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _finish_background_update_check(self, result: dict) -> None:
+        """백그라운드 업데이트 확인 결과를 설정 버튼과 설정창에 반영한다."""
+        self._update_notice = result
+        self._refresh_settings_update_highlight()
+        if hasattr(self, "_update_status_var"):
+            self._update_status_var.set(self._settings_update_status_text())
+        if _widget_exists(getattr(self, "_update_status_label", None)):
+            color = "#ffd166" if result.get("available") else "#a0c4ff"
+            try:
+                self._update_status_label.config(fg=color)
+            except tk.TclError:
+                pass
+
+    def _settings_update_status_text(self) -> str:
+        """설정창 업데이트 영역에 표시할 짧은 상태 문구."""
+        result = self._update_notice
+        current = _current_app_version()
+        if result is None:
+            return f"현재 버전 v{current} - 시작 후 자동으로 업데이트를 확인합니다."
+        if result.get("available"):
+            latest = result.get("latest") or result.get("tag") or "최신"
+            return f"새 버전 v{latest} 사용 가능 - 업데이트 버튼에서 확인하세요."
+        if result.get("ok"):
+            return f"현재 최신 버전입니다. v{result.get('current', current)}"
+        return f"업데이트 자동 확인 실패 - 현재 버전 v{current}"
+
+    def _refresh_settings_update_highlight(self) -> None:
+        """업데이트가 있을 때 설정 버튼 테두리를 강조한다."""
+        available = bool(self._update_notice and self._update_notice.get("available"))
+        alive_buttons: list[tk.Button] = []
+        for button in self._settings_alert_buttons:
+            if not _widget_exists(button):
+                continue
+            alive_buttons.append(button)
+            try:
+                label = "✕ 닫기" if (_widget_exists(self._settings_window)
+                                    and button is self._settings_button) else "⚙ 설정"
+                if available:
+                    button.config(
+                        text=label if label.startswith("✕") else "⚙ 설정  업데이트",
+                        relief="solid", bd=max(2, _px(2)),
+                        highlightthickness=max(2, _px(2)),
+                        highlightbackground="#ffd166",
+                        highlightcolor="#ffd166",
+                    )
+                else:
+                    button.config(
+                        text=label,
+                        relief="flat", bd=0,
+                        highlightthickness=0,
+                    )
+            except tk.TclError:
+                pass
+        self._settings_alert_buttons = alive_buttons
+
+    def _mark_update_notice_seen(self) -> None:
+        """설정창을 열었을 때도 새 버전 표시 자체는 유지한다."""
+        self._refresh_settings_update_highlight()
+
     def _toggle_settings(self,
                          parent: "tk.Misc | None" = None,
                          button: "tk.Button | None" = None) -> None:
         parent = (parent or self.container).winfo_toplevel()
         self._settings_button = button
+        if button is not None:
+            self.register_settings_button(button)
 
         if _widget_exists(self._settings_window):
             self._settings_window.destroy()
             self._settings_window = None
             if self._settings_button is not None:
                 self._settings_button.config(text="⚙ 설정")
+                self._refresh_settings_update_highlight()
             return
 
         SETTINGS_BG = "#0f3460"
@@ -4935,10 +5102,12 @@ class CafeKioskApp:
             self._settings_window = None
             if self._settings_button is not None:
                 self._settings_button.config(text="⚙ 설정")
+                self._refresh_settings_update_highlight()
 
         win.protocol("WM_DELETE_WINDOW", _close_settings)
         if self._settings_button is not None:
             self._settings_button.config(text="✕ 닫기")
+        self._mark_update_notice_seen()
 
         settings_canvas = tk.Canvas(win, bg=SETTINGS_BG, highlightthickness=0)
         settings_scroll = tk.Scrollbar(win, orient="vertical", command=settings_canvas.yview)
@@ -5141,13 +5310,29 @@ class CafeKioskApp:
                   command=lambda: show_admin_stats_popup(win)
                   ).grid(row=0, column=1, sticky="ew", padx=(_px(4), 0))
 
-        tk.Button(outer, text="업데이트",
+        update_frame = tk.Frame(outer, bg=SETTINGS_BG)
+        update_frame.pack(fill="x", pady=(0, _px(10)))
+
+        self._update_status_var = tk.StringVar(value=self._settings_update_status_text())
+        self._update_status_label = tk.Label(
+            update_frame, textvariable=self._update_status_var,
+            font=(FONT_UI, _fs(9)),
+            bg=SETTINGS_BG,
+            fg="#ffd166" if self._update_notice and self._update_notice.get("available") else "#a0c4ff",
+            anchor="w", justify="left",
+            wraplength=max(260, win_w - _px(50))
+        )
+        self._update_status_label.pack(fill="x", pady=(0, _px(4)))
+
+        update_btn_bg = "#f59e0b" if self._update_notice and self._update_notice.get("available") else "#16a34a"
+        update_btn_active = "#d97706" if self._update_notice and self._update_notice.get("available") else "#15803d"
+        tk.Button(update_frame, text="업데이트 확인" if self._update_notice and self._update_notice.get("available") else "업데이트",
                   font=(FONT_UI, _fs(10), "bold"),
-                  bg="#16a34a", fg="white",
-                  activebackground="#15803d", activeforeground="white",
+                  bg=update_btn_bg, fg="white",
+                  activebackground=update_btn_active, activeforeground="white",
                   relief="flat", padx=_px(8), pady=_px(5), cursor="hand2",
                   command=lambda: show_update_popup(win)
-                  ).pack(fill="x", pady=(0, _px(10)))
+                  ).pack(fill="x")
 
         dialogflow_frame = tk.Frame(outer, bg=SETTINGS_BG)
         dialogflow_frame.pack(fill="x", pady=(0, _px(8)))
@@ -7036,6 +7221,9 @@ class KioskScreen:
                 )
             )
             self._cfg_btn.pack(side="right", padx=_px(12))
+            register_btn = getattr(self.settings_controller, "register_settings_button", None)
+            if callable(register_btn):
+                register_btn(self._cfg_btn)
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         # 카테고리 탭 버튼 바
