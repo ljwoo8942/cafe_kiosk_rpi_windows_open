@@ -26,16 +26,43 @@ function Write-Step {
 
 function Test-CommandOk {
     param([string]$Exe, [string[]]$Arguments)
+    $version = Get-PythonVersion -Exe $Exe -Arguments $Arguments
+    return ($null -ne $version -and $version -ge $MinPython -and $version -lt $MaxPythonExclusive)
+}
+
+function Get-PythonVersion {
+    param([string]$Exe, [string[]]$Arguments)
     try {
         $output = & $Exe @Arguments -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')"
         if ($LASTEXITCODE -eq 0 -and $output) {
-            $version = [version]($output | Select-Object -First 1)
-            return ($version -ge $MinPython -and $version -lt $MaxPythonExclusive)
+            return [version]($output | Select-Object -First 1)
         }
     } catch {
-        return $false
+        return $null
     }
-    return $false
+    return $null
+}
+
+function Test-SamePythonMinor {
+    param([version]$Left, [version]$Right)
+    return ($null -ne $Left -and $null -ne $Right -and
+            $Left.Major -eq $Right.Major -and $Left.Minor -eq $Right.Minor)
+}
+
+function Remove-VenvSafely {
+    param([string]$Path)
+    if (!(Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    $repoFull = (Resolve-Path -LiteralPath $RepoRoot).Path
+    $venvFull = (Resolve-Path -LiteralPath $Path).Path
+    $repoPrefix = $repoFull.TrimEnd("\", "/") + [IO.Path]::DirectorySeparatorChar
+    if (!$venvFull.StartsWith($repoPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "가상환경 경로가 설치 폴더 밖입니다. 삭제하지 않습니다: $venvFull"
+    }
+
+    Remove-Item -LiteralPath $venvFull -Recurse -Force
 }
 
 function Invoke-Native {
@@ -104,8 +131,23 @@ Write-Host "설치 위치: $RepoRoot"
 $python = Get-PythonCommand
 $PythonExe = $python.Exe
 $PythonArgs = @($python.Args)
+$SelectedPythonVersion = Get-PythonVersion -Exe $PythonExe -Arguments $PythonArgs
 Write-Step "Python 확인"
 Invoke-Native -Exe $PythonExe -Arguments ($PythonArgs + @("-c", "import sys; print('Python', sys.version)"))
+
+$VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+if (Test-Path -LiteralPath $VenvDir) {
+    $VenvVersion = $null
+    if (Test-Path -LiteralPath $VenvPython) {
+        $VenvVersion = Get-PythonVersion -Exe $VenvPython -Arguments @()
+    }
+
+    if (!(Test-SamePythonMinor -Left $VenvVersion -Right $SelectedPythonVersion)) {
+        Write-Step "기존 가상환경 재생성"
+        Write-Host "기존 가상환경 Python 버전이 선택된 Python과 달라 다시 만듭니다." -ForegroundColor Yellow
+        Remove-VenvSafely -Path $VenvDir
+    }
+}
 
 if (!(Test-Path -LiteralPath $VenvDir)) {
     Write-Step "가상환경 생성"
@@ -114,7 +156,6 @@ if (!(Test-Path -LiteralPath $VenvDir)) {
     Write-Step "기존 가상환경 사용"
 }
 
-$VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 if (!(Test-Path -LiteralPath $VenvPython)) {
     throw "가상환경 Python을 찾을 수 없습니다: $VenvPython"
 }
