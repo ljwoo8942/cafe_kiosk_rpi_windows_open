@@ -1,8 +1,9 @@
 @echo off
 setlocal
 set "ROOT=%~dp0"
-set "PYTHON=%ROOT%.venv-windows\Scripts\pythonw.exe"
-set "CHECKPYTHON=%ROOT%.venv-windows\Scripts\python.exe"
+cd /d "%ROOT%"
+set "PYTHON=.venv-windows\Scripts\pythonw.exe"
+set "CHECKPYTHON=.venv-windows\Scripts\python.exe"
 
 if not exist "%PYTHON%" (
     set "PYTHON=%CHECKPYTHON%"
@@ -15,9 +16,26 @@ if exist "%PYTHON%" (
 
 if not "%PYTHON%"=="" (
     cd /d "%ROOT%cafe_kiosk"
-    start "" "%PYTHON%" "%ROOT%cafe_kiosk\cafe_kiosk_final.py"
+    start "" "%ROOT%%PYTHON%" "%ROOT%cafe_kiosk\cafe_kiosk_final.py"
     exit /b 0
 )
+
+call :TryPythonPath "%LOCALAPPDATA%\Programs\Python\Python313\pythonw.exe"
+if not errorlevel 1 exit /b 0
+call :TryPythonPath "%LOCALAPPDATA%\Programs\Python\Python313\python.exe"
+if not errorlevel 1 exit /b 0
+call :TryPythonPath "%ProgramFiles%\Python313\pythonw.exe"
+if not errorlevel 1 exit /b 0
+call :TryPythonPath "%ProgramFiles%\Python313\python.exe"
+if not errorlevel 1 exit /b 0
+call :TryPythonPath "%ProgramFiles(x86)%\Python313-32\pythonw.exe"
+if not errorlevel 1 exit /b 0
+call :TryPythonPath "%ProgramFiles(x86)%\Python313-32\python.exe"
+if not errorlevel 1 exit /b 0
+call :TryPythonPath "C:\Python313\pythonw.exe"
+if not errorlevel 1 exit /b 0
+call :TryPythonPath "C:\Python313\python.exe"
+if not errorlevel 1 exit /b 0
 
 where py >nul 2>nul
 if not errorlevel 1 (
@@ -55,9 +73,19 @@ if not exist "%~1" (
     where "%~1" >nul 2>nul
     if errorlevel 1 exit /b 1
 )
-"%~1" -c "import sys; v=sys.version_info; raise SystemExit(v.major != 3 or v.minor not in [10,11,12,13])" >nul 2>nul
+"%~1" -c "import sys; v=sys.version_info[:2]; raise SystemExit(not ((3, 10) <= v <= (3, 13)))" >nul 2>nul
 exit /b %ERRORLEVEL%
 
 :CheckPyLauncher
-py %~1 -c "import sys; v=sys.version_info; raise SystemExit(v.major != 3 or v.minor not in [10,11,12,13])" >nul 2>nul
+py %~1 -c "import sys; v=sys.version_info[:2]; raise SystemExit(not ((3, 10) <= v <= (3, 13)))" >nul 2>nul
 exit /b %ERRORLEVEL%
+
+:TryPythonPath
+if not exist "%~1" exit /b 1
+set "CHECK_EXE=%~1"
+if /I "%~nx1"=="pythonw.exe" if exist "%~dp1python.exe" set "CHECK_EXE=%~dp1python.exe"
+call :CheckPython "%CHECK_EXE%"
+if errorlevel 1 exit /b 1
+cd /d "%ROOT%cafe_kiosk"
+start "" "%~1" "%ROOT%cafe_kiosk\cafe_kiosk_final.py"
+exit /b 0
