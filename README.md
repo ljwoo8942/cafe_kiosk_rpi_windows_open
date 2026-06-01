@@ -78,12 +78,16 @@ Edge TTS는 반복 안내 문구를 `cafe_kiosk/tts_cache`에 캐시하여 다�
 ```text
 .
 ├── README.md
+├── VERSION
 ├── requirements-windows.txt
 ├── requirements-rpi.txt
 ├── install_windows.ps1
 ├── install_raspberry_pi.sh
 ├── run_windows.cmd
 ├── run_raspberry_pi.sh
+├── packaging/
+│   ├── windows/
+│   └── rpi/
 └── cafe_kiosk/
     ├── cafe_kiosk_final.py
     ├── 설치및사용법.txt
@@ -124,6 +128,37 @@ CAFE_KIOSK_AUTOSTART=1 bash install_raspberry_pi.sh
 ```
 
 설치 파일은 가상환경을 만들고 필요한 패키지를 설치한 뒤 실행 바로가기를 생성합니다.
+
+## 배포 패키지 만들기
+
+Windows 설치 EXE 또는 portable zip 생성:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\packaging\windows\build_windows_installer.ps1
+```
+
+Windows에 Inno Setup 6이 설치되어 있으면 `dist/CafeKiosk-Windows-Setup-버전.exe`가 생성됩니다. Inno Setup이 없으면 `dist/CafeKiosk-Windows-Portable-버전.zip`이 생성됩니다.
+
+portable zip만 만들고 싶으면 다음 명령을 사용합니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\packaging\windows\build_windows_installer.ps1 -PortableOnly
+```
+
+Raspberry Pi / Linux deb 패키지 생성:
+
+```bash
+bash packaging/rpi/build_rpi_deb.sh
+```
+
+빌드가 끝나면 `dist/cafe-kiosk-rpi_버전_all.deb` 파일이 생성됩니다. Raspberry Pi에서 설치할 때는 다음처럼 실행합니다.
+
+```bash
+sudo apt install ./dist/cafe-kiosk-rpi_버전_all.deb
+cafe-kiosk
+```
+
+배포 산출물은 `dist/` 폴더에 만들어지며 Git에는 포함하지 않습니다.
 
 수동 실행:
 
