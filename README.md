@@ -13,6 +13,17 @@
 
 Raspberry Pi에서는 `xrandr`로 연결된 모니터 크기와 위치를 감지해 작은 화면은 음성+터치 주문 창, 큰 화면은 키오스크 주문 창으로 자동 배치합니다. 단일 소형 화면에서는 탭 기반 풀스크린 UI로 실행됩니다.
 
+## 다운로드
+
+최신 설치 파일은 GitHub Releases에서 받을 수 있습니다.
+
+- [Windows 설치 파일 다운로드](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.0/CafeKiosk-Windows-Setup-1.0.0.exe)
+- [Windows portable zip 다운로드](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.0/CafeKiosk-Windows-Portable-1.0.0.zip)
+- [Raspberry Pi / Linux deb 다운로드](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.0/cafe-kiosk-rpi_1.0.0_all.deb)
+
+릴리즈 페이지:
+[Cafe Kiosk v1.0.0](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.0.0)
+
 ## 주요 기능
 
 - 음성 인식 기반 메뉴 주문
