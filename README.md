@@ -151,6 +151,12 @@ Raspberry Pi / Linux deb 패키지 생성:
 bash packaging/rpi/build_rpi_deb.sh
 ```
 
+Windows에서 Raspberry Pi용 deb 파일만 미리 만들 때는 다음 명령도 사용할 수 있습니다.
+
+```powershell
+python packaging/rpi/build_rpi_deb.py
+```
+
 빌드가 끝나면 `dist/cafe-kiosk-rpi_버전_all.deb` 파일이 생성됩니다. Raspberry Pi에서 설치할 때는 다음처럼 실행합니다.
 
 ```bash
