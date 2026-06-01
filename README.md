@@ -174,6 +174,10 @@ Dialogflow를 사용하려면 Google Cloud 서비스 계정 JSON 파일을 `cafe
 
 할인 설정은 메뉴별로 직접 할인 가격을 입력하거나 할인율(%)을 지정하는 방식으로 사용할 수 있습니다.
 
+## 제작자
+
+이지우 (ljwoo8942@gmail.com)
+
 ## 개발 메모
 
 이 프로젝트는 단일 실행 파일 중심의 tkinter 애플리케이션입니다. Windows와 Raspberry Pi에서 같은 코드가 동작하도록 선택적 import와 플랫폼별 폴백을 사용합니다.
