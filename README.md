@@ -209,19 +209,6 @@ Dialogflow를 사용하려면 Google Cloud 서비스 계정 JSON 파일을 `cafe
 
 만약 따로 Dialogflow 사용하기를 원하시면 문의 주시기 바랍니다.
 
-## 저장되지 않는 로컬 파일
-
-아래 파일은 실행 중 자동 생성되거나 개인 환경에 따라 달라지므로 Git에 올리지 않습니다.
-
-- `cafe_kiosk/cafe_kiosk.db`
-- `cafe_kiosk/cafe_kiosk_settings.json`
-- `cafe_kiosk/tts_cache/`
-- `cafe_kiosk/*.json`
-- `__pycache__/`
-- 가상환경 폴더
-
-데이터베이스에는 주문 이력, 메뉴 키워드, 음성 인식 실패 로그 등이 저장됩니다. 공개 저장소에는 샘플 코드와 기본 리소스만 포함합니다.
-
 ## 관리자 기능
 
 설정 창에서 다음 기능을 사용할 수 있습니다.
