@@ -5268,6 +5268,41 @@ class CafeKioskApp:
                  bg=SETTINGS_BG, fg="#a0c4ff", anchor="w").pack(fill="x", pady=(0, _px(8)))
         self.root.after(500, self._refresh_tts_voice_combo)
 
+        mic_frame = tk.Frame(outer, bg=SETTINGS_BG)
+        mic_frame.pack(fill="x", pady=(0, _px(8)))
+
+        tk.Label(mic_frame, text="마이크",
+                 font=(FONT_UI, _fs(10), "bold"),
+                 bg=SETTINGS_BG, fg="#7ecfff").pack(side="left", padx=(0, _px(6)))
+
+        mic_names = ["기본 마이크 (시스템)"] + [name for _, name in self._mic_list]
+        selected_mic = "기본 마이크 (시스템)"
+        if self._current_mic_index is not None:
+            for idx, name in self._mic_list:
+                if idx == self._current_mic_index:
+                    selected_mic = name
+                    break
+        self._mic_combo_var.set(selected_mic)
+
+        self._mic_combo = ttk.Combobox(
+            mic_frame, textvariable=self._mic_combo_var,
+            values=mic_names, state="readonly",
+            width=max(16, int(30 * UI_SCALE)), font=(FONT_UI, _fs(10))
+        )
+        self._mic_combo.pack(side="left", fill="x", expand=True, padx=(0, _px(6)))
+
+        tk.Button(mic_frame, text="적용",
+                  font=(FONT_UI, _fs(10), "bold"),
+                  bg=ACCENT, fg="white",
+                  activebackground="#c73652", activeforeground="white",
+                  relief="flat", padx=_px(8), pady=_px(3), cursor="hand2",
+                  command=self._on_mic_apply
+                  ).pack(side="left")
+
+        tk.Label(outer, textvariable=self._mic_status_var,
+                 font=(FONT_UI, _fs(9)),
+                 bg=SETTINGS_BG, fg="#a0c4ff", anchor="w").pack(fill="x", pady=(0, _px(10)))
+
         tool_row = tk.Frame(outer, bg=SETTINGS_BG)
         tool_row.pack(fill="x", pady=(0, _px(6)))
         tool_row.columnconfigure(0, weight=1)
@@ -5350,41 +5385,6 @@ class CafeKioskApp:
                  bg=SETTINGS_BG, fg="#a0c4ff", anchor="w",
                  wraplength=max(180, win_w - _px(190)), justify="left"
                  ).pack(side="left", fill="x", expand=True)
-
-        mic_frame = tk.Frame(outer, bg=SETTINGS_BG)
-        mic_frame.pack(fill="x", pady=(0, _px(8)))
-
-        tk.Label(mic_frame, text="마이크",
-                 font=(FONT_UI, _fs(10), "bold"),
-                 bg=SETTINGS_BG, fg="#7ecfff").pack(side="left", padx=(0, _px(6)))
-
-        mic_names = ["기본 마이크 (시스템)"] + [name for _, name in self._mic_list]
-        selected_mic = "기본 마이크 (시스템)"
-        if self._current_mic_index is not None:
-            for idx, name in self._mic_list:
-                if idx == self._current_mic_index:
-                    selected_mic = name
-                    break
-        self._mic_combo_var.set(selected_mic)
-
-        self._mic_combo = ttk.Combobox(
-            mic_frame, textvariable=self._mic_combo_var,
-            values=mic_names, state="readonly",
-            width=max(16, int(30 * UI_SCALE)), font=(FONT_UI, _fs(10))
-        )
-        self._mic_combo.pack(side="left", padx=(0, _px(6)))
-
-        tk.Button(mic_frame, text="적용",
-                  font=(FONT_UI, _fs(10), "bold"),
-                  bg=ACCENT, fg="white",
-                  activebackground="#c73652", activeforeground="white",
-                  relief="flat", padx=_px(8), pady=_px(3), cursor="hand2",
-                  command=self._on_mic_apply
-                  ).pack(side="left")
-
-        tk.Label(outer, textvariable=self._mic_status_var,
-                 font=(FONT_UI, _fs(9)),
-                 bg=SETTINGS_BG, fg="#a0c4ff", anchor="w").pack(fill="x", pady=(0, _px(12)))
 
         tk.Frame(outer, bg="#1a1a2e", height=1).pack(fill="x", pady=(0, _px(10)))
 

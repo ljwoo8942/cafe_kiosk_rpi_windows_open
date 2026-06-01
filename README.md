@@ -17,18 +17,18 @@ Raspberry Pi에서는 `xrandr`로 연결된 모니터 크기와 위치를 감지
 
 최신 설치 파일은 GitHub Releases에서 받을 수 있습니다. 일반 사용자는 아래 파일만 다운로드하면 됩니다.
 
-- Windows: [CafeKiosk-Windows-Setup-1.0.5.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.5/CafeKiosk-Windows-Setup-1.0.5.exe)
-- Raspberry Pi / Linux: [cafe-kiosk-rpi_1.0.5_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.5/cafe-kiosk-rpi_1.0.5_all.deb)
-- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.0.5.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.5/CafeKiosk-Windows-Portable-1.0.5.zip)
+- Windows: [CafeKiosk-Windows-Setup-1.0.6.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.6/CafeKiosk-Windows-Setup-1.0.6.exe)
+- Raspberry Pi / Linux: [cafe-kiosk-rpi_1.0.6_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.6/cafe-kiosk-rpi_1.0.6_all.deb)
+- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.0.6.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.6/CafeKiosk-Windows-Portable-1.0.6.zip)
 
 릴리즈 페이지:
-[Cafe Kiosk v1.0.5](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.0.5)
+[Cafe Kiosk v1.0.6](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.0.6)
 
 ## 설치 방법
 
 Windows:
 
-1. `CafeKiosk-Windows-Setup-1.0.5.exe`를 다운로드합니다.
+1. `CafeKiosk-Windows-Setup-1.0.6.exe`를 다운로드합니다.
 2. 설치 파일을 실행합니다.
 3. 설치가 끝나면 바탕화면의 `BEAN & BREW Cafe Kiosk` 바로가기로 실행합니다.
 
@@ -38,11 +38,11 @@ Windows에서 SmartScreen 경고가 표시될 수 있습니다. 개인 개발자
 
 Raspberry Pi / Linux:
 
-1. `cafe-kiosk-rpi_1.0.5_all.deb`를 다운로드합니다.
+1. `cafe-kiosk-rpi_1.0.6_all.deb`를 다운로드합니다.
 2. 파일이 있는 폴더에서 아래 명령을 실행합니다.
 
 ```bash
-sudo apt install ./cafe-kiosk-rpi_1.0.5_all.deb
+sudo apt install ./cafe-kiosk-rpi_1.0.6_all.deb
 cafe-kiosk
 ```
 
