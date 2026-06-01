@@ -17,18 +17,18 @@ Raspberry Pi에서는 `xrandr`로 연결된 모니터 크기와 위치를 감지
 
 최신 설치 파일은 GitHub Releases에서 받을 수 있습니다. 일반 사용자는 아래 파일만 다운로드하면 됩니다.
 
-- Windows: [CafeKiosk-Windows-Setup-1.0.1.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.1/CafeKiosk-Windows-Setup-1.0.1.exe)
-- Raspberry Pi / Linux: [cafe-kiosk-rpi_1.0.1_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.1/cafe-kiosk-rpi_1.0.1_all.deb)
-- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.0.1.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.1/CafeKiosk-Windows-Portable-1.0.1.zip)
+- Windows: [CafeKiosk-Windows-Setup-1.0.2.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.2/CafeKiosk-Windows-Setup-1.0.2.exe)
+- Raspberry Pi / Linux: [cafe-kiosk-rpi_1.0.2_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.2/cafe-kiosk-rpi_1.0.2_all.deb)
+- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.0.2.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.2/CafeKiosk-Windows-Portable-1.0.2.zip)
 
 릴리즈 페이지:
-[Cafe Kiosk v1.0.1](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.0.1)
+[Cafe Kiosk v1.0.2](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.0.2)
 
 ## 설치 방법
 
 Windows:
 
-1. `CafeKiosk-Windows-Setup-1.0.1.exe`를 다운로드합니다.
+1. `CafeKiosk-Windows-Setup-1.0.2.exe`를 다운로드합니다.
 2. 설치 파일을 실행합니다.
 3. 설치가 끝나면 바탕화면의 `BEAN & BREW Cafe Kiosk` 바로가기로 실행합니다.
 
@@ -38,11 +38,11 @@ Windows에서 SmartScreen 경고가 표시될 수 있습니다. 개인 개발자
 
 Raspberry Pi / Linux:
 
-1. `cafe-kiosk-rpi_1.0.1_all.deb`를 다운로드합니다.
+1. `cafe-kiosk-rpi_1.0.2_all.deb`를 다운로드합니다.
 2. 파일이 있는 폴더에서 아래 명령을 실행합니다.
 
 ```bash
-sudo apt install ./cafe-kiosk-rpi_1.0.1_all.deb
+sudo apt install ./cafe-kiosk-rpi_1.0.2_all.deb
 cafe-kiosk
 ```
 
@@ -244,9 +244,11 @@ requirements-rpi.txt
 
 ## Dialogflow 사용
 
-Dialogflow를 사용하려면 Google Cloud 서비스 계정 JSON 파일을 `cafe_kiosk` 폴더에 배치해야 합니다. 현재 코드는 기본 파일명으로 `avis-fcwa-d608a6b1f702.json`을 찾습니다.
+Dialogflow를 사용하려면 Google Cloud 서비스 계정 JSON 파일이 필요합니다.
 
-이 파일은 개인 인증 정보이므로 저장소에 포함하지 않습니다. 파일이 없어도 프로그램은 키워드 기반 음성 인식으로 동작합니다.
+설정 창에서 `Dialogflow 등록` 버튼을 누른 뒤 전달받은 JSON 파일을 선택하면 자동으로 적용됩니다. 이미 프로그램 폴더 또는 사용자 설정 폴더에 인증 파일이 있으면 프로그램 시작 시 우선적으로 불러옵니다.
+
+인증 파일이 없거나 Dialogflow 연결에 실패해도 프로그램은 키워드 기반 음성 인식으로 계속 동작합니다.
 
 만약 따로 Dialogflow 사용하기를 원하시면 문의 주시기 바랍니다.
 

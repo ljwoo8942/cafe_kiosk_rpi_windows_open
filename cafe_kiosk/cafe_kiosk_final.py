@@ -92,6 +92,69 @@ if IS_LINUX and os.path.exists("/proc/device-tree/model"):
     except OSError:
         pass
 
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(APP_DIR)
+DIALOGFLOW_CREDENTIAL_FILENAME = "avis-fcwa-d608a6b1f702.json"
+DIALOGFLOW_DEFAULT_PROJECT_ID = "avis-fcwa"
+
+
+def _user_config_dir() -> str:
+    """사용자별 설정 파일을 둘 수 있는 쓰기 가능한 폴더를 반환한다."""
+    if IS_WINDOWS:
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        return os.path.join(base, "BEAN_BREW_Cafe_Kiosk")
+    return os.path.join(os.path.expanduser("~"), ".config", "bean_brew_cafe_kiosk")
+
+
+def _dialogflow_candidate_paths() -> list[str]:
+    """Dialogflow 인증 파일을 자동 감지할 후보 경로 목록."""
+    candidates = [
+        os.path.join(APP_DIR, DIALOGFLOW_CREDENTIAL_FILENAME),
+        os.path.join(_user_config_dir(), DIALOGFLOW_CREDENTIAL_FILENAME),
+    ]
+    env_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    if env_path:
+        candidates.insert(0, env_path)
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for path in candidates:
+        norm = os.path.abspath(os.path.expanduser(path))
+        if norm not in seen:
+            seen.add(norm)
+            unique.append(norm)
+    return unique
+
+
+def _dialogflow_project_id_from_file(path: str | None,
+                                     default: str = DIALOGFLOW_DEFAULT_PROJECT_ID) -> str:
+    """서비스 계정 JSON에서 project_id를 읽어 Dialogflow 프로젝트를 맞춘다."""
+    if not path:
+        return default
+    try:
+        with open(path, "r", encoding="utf-8") as fp:
+            data = json.load(fp)
+        project_id = str(data.get("project_id", "")).strip()
+        return project_id or default
+    except Exception:
+        return default
+
+
+def _existing_dialogflow_credential_path() -> str | None:
+    """이미 배치된 Dialogflow 인증 파일이 있으면 우선적으로 반환한다."""
+    for path in _dialogflow_candidate_paths():
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def _dialogflow_registration_target_path() -> str:
+    """설정창에서 등록한 인증 파일을 복사할 안전한 위치."""
+    app_target = os.path.join(APP_DIR, DIALOGFLOW_CREDENTIAL_FILENAME)
+    if os.access(APP_DIR, os.W_OK):
+        return app_target
+    return os.path.join(_user_config_dir(), DIALOGFLOW_CREDENTIAL_FILENAME)
+
 # ─────────────────────────────────────────────────────
 # ■ 외부 라이브러리
 # ─────────────────────────────────────────────────────
@@ -143,20 +206,22 @@ else:
 
 # ── google-cloud-dialogflow: 자연어 인텐트 인식 (선택적 임포트) ─
 # 미설치 시 기존 키워드 매칭으로 폴백한다.
+_CRED_PATH = _existing_dialogflow_credential_path()
+if _CRED_PATH:
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _CRED_PATH
+
 try:
-    # 인증 키 파일: 코드와 같은 폴더에 위치
-    _CRED_PATH = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "avis-fcwa-d608a6b1f702.json"
-    )
-    os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", _CRED_PATH)
     from google.cloud import dialogflow_v2 as dialogflow
-    DIALOGFLOW_AVAILABLE = True
-    DIALOGFLOW_PROJECT_ID = "avis-fcwa"
+    DIALOGFLOW_PACKAGE_AVAILABLE = True
+    DIALOGFLOW_AVAILABLE = bool(_CRED_PATH)
+    DIALOGFLOW_PROJECT_ID = _dialogflow_project_id_from_file(_CRED_PATH)
     DIALOGFLOW_SESSION_ID = "kiosk-session-1"
 except (ImportError, ModuleNotFoundError):
+    DIALOGFLOW_PACKAGE_AVAILABLE = False
     DIALOGFLOW_AVAILABLE = False
     dialogflow = None
+    DIALOGFLOW_PROJECT_ID = DIALOGFLOW_DEFAULT_PROJECT_ID
+    DIALOGFLOW_SESSION_ID = "kiosk-session-1"
     print("⚠️  google-cloud-dialogflow 미설치 — 키워드 매칭으로 동작합니다."
           " 설치: pip install google-cloud-dialogflow")
 
@@ -165,7 +230,7 @@ except (ImportError, ModuleNotFoundError):
 #   ttk: 탭(Notebook)·드롭다운(Combobox) 등 확장 위젯 제공
 # ─────────────────────────────────────────────────────
 import tkinter as tk
-from tkinter import scrolledtext, ttk, messagebox
+from tkinter import scrolledtext, ttk, messagebox, filedialog
 
 # ── Pillow: 메뉴 이미지 로딩 및 리사이즈 (선택적 임포트) ─
 try:
@@ -324,8 +389,6 @@ def _rpi_touch_monitor_pair(monitors: list[dict[str, int | str]]
 # 메인 스레드에서 초기화하면 runAndWait() 이후 두 번째 음성부터 무음이 되는 문제 발생
 tts_engine = None   # 워커 스레드 시작 후 해당 스레드 안에서 할당됨
 
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.dirname(APP_DIR)
 APP_SETTINGS_PATH = os.path.join(APP_DIR, "cafe_kiosk_settings.json")
 
 
@@ -3334,6 +3397,53 @@ def reset_admin_stats_history() -> bool:
         conn.close()
 
 
+def dialogflow_status_text() -> str:
+    """설정창에 표시할 Dialogflow 적용 상태."""
+    if not DIALOGFLOW_PACKAGE_AVAILABLE:
+        return "Dialogflow 패키지 미설치 - 키워드 인식 모드"
+    if DIALOGFLOW_AVAILABLE and _CRED_PATH and os.path.isfile(_CRED_PATH):
+        return f"적용됨 - 프로젝트 {DIALOGFLOW_PROJECT_ID}"
+    return "인증 파일 없음 - 키워드 인식 모드"
+
+
+def register_dialogflow_credential(source_path: str) -> tuple[bool, str]:
+    """사용자가 선택한 Dialogflow JSON 인증 파일을 등록한다."""
+    global _CRED_PATH, DIALOGFLOW_AVAILABLE, DIALOGFLOW_PROJECT_ID
+    global _dialogflow_session_client
+
+    source_path = os.path.abspath(os.path.expanduser(source_path))
+    if not os.path.isfile(source_path):
+        return False, "선택한 파일을 찾을 수 없습니다."
+
+    try:
+        with open(source_path, "r", encoding="utf-8") as fp:
+            data = json.load(fp)
+    except Exception as exc:
+        return False, f"JSON 파일을 읽지 못했습니다: {exc}"
+
+    project_id = str(data.get("project_id", "")).strip()
+    if not project_id or not data.get("client_email") or not data.get("private_key"):
+        return False, "Dialogflow 서비스 계정 JSON 형식이 아닙니다."
+
+    target_path = _dialogflow_registration_target_path()
+    try:
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        if os.path.abspath(source_path) != os.path.abspath(target_path):
+            shutil.copy2(source_path, target_path)
+    except Exception as exc:
+        return False, f"인증 파일을 복사하지 못했습니다: {exc}"
+
+    _CRED_PATH = target_path
+    DIALOGFLOW_PROJECT_ID = project_id
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = target_path
+    _dialogflow_session_client = None
+    DIALOGFLOW_AVAILABLE = bool(DIALOGFLOW_PACKAGE_AVAILABLE)
+
+    if not DIALOGFLOW_PACKAGE_AVAILABLE:
+        return True, "인증 파일은 등록됐지만 google-cloud-dialogflow 패키지가 없습니다."
+    return True, f"Dialogflow 인증 파일이 적용되었습니다. 프로젝트: {project_id}"
+
+
 def _find_update_repo_dir() -> str | None:
     """현재 실행 파일 기준으로 Git 업데이트가 가능한 저장소 루트를 찾는다."""
     for path in (PROJECT_DIR, APP_DIR):
@@ -4526,6 +4636,7 @@ class CafeKioskApp:
         self._tts_voice_status_var = tk.StringVar(value=self._current_tts_voice_status_text())
         self._mic_combo_var = tk.StringVar(value=self._current_mic_display_name())
         self._mic_status_var = tk.StringVar(value=self._current_mic_status_text())
+        self._dialogflow_status_var = tk.StringVar(value=dialogflow_status_text())
         self._soldout_cat_var = tk.StringVar(value=list(MENU_CATEGORIES.keys())[0])
         self._soldout_menu_var = tk.StringVar(value=MENU_CATEGORIES[self._soldout_cat_var.get()][0])
         self._soldout_status_var = tk.StringVar(value="")
@@ -5037,6 +5148,23 @@ class CafeKioskApp:
                   relief="flat", padx=_px(8), pady=_px(5), cursor="hand2",
                   command=lambda: show_update_popup(win)
                   ).pack(fill="x", pady=(0, _px(10)))
+
+        dialogflow_frame = tk.Frame(outer, bg=SETTINGS_BG)
+        dialogflow_frame.pack(fill="x", pady=(0, _px(8)))
+
+        tk.Button(dialogflow_frame, text="Dialogflow 등록",
+                  font=(FONT_UI, _fs(10), "bold"),
+                  bg="#4f46e5", fg="white",
+                  activebackground="#3730a3", activeforeground="white",
+                  relief="flat", padx=_px(8), pady=_px(5), cursor="hand2",
+                  command=self._register_dialogflow_file
+                  ).pack(side="left", padx=(0, _px(8)))
+
+        tk.Label(dialogflow_frame, textvariable=self._dialogflow_status_var,
+                 font=(FONT_UI, _fs(9)),
+                 bg=SETTINGS_BG, fg="#a0c4ff", anchor="w",
+                 wraplength=max(180, win_w - _px(190)), justify="left"
+                 ).pack(side="left", fill="x", expand=True)
 
         mic_frame = tk.Frame(outer, bg=SETTINGS_BG)
         mic_frame.pack(fill="x", pady=(0, _px(8)))
@@ -5642,6 +5770,30 @@ class CafeKioskApp:
         if selected == "기본 마이크 (시스템)":
             return "기본 마이크 사용 중"
         return f"{selected[:20]}..." if len(selected) > 20 else selected
+
+    def _register_dialogflow_file(self) -> None:
+        """설정창에서 Dialogflow 서비스 계정 JSON 파일을 선택해 등록한다."""
+        parent = self._settings_window if _widget_exists(self._settings_window) else self.root
+        path = filedialog.askopenfilename(
+            parent=parent,
+            title="Dialogflow 서비스 계정 JSON 선택",
+            filetypes=[
+                ("JSON 파일", "*.json"),
+                ("모든 파일", "*.*"),
+            ],
+        )
+        if not path:
+            return
+
+        ok, message = register_dialogflow_credential(path)
+        self._dialogflow_status_var.set(dialogflow_status_text())
+        self.log(f"\n[설정] Dialogflow 등록: {message}")
+        if ok:
+            messagebox.showinfo("Dialogflow 등록", message, parent=parent)
+            speak("Dialogflow 인증 파일이 적용되었습니다.")
+        else:
+            messagebox.showwarning("Dialogflow 등록", message, parent=parent)
+            speak("Dialogflow 인증 파일을 적용하지 못했습니다.")
 
     def _save_settings_debounced(self, delay_ms: int = 500) -> None:
         """슬라이더 드래그 중 설정 파일 저장을 짧게 모아서 1회만 수행한다."""
