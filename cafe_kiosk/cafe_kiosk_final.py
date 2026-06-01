@@ -1351,6 +1351,79 @@ def _widget_exists(widget: "tk.Misc | None") -> bool:
         return False
 
 
+def _wheel_scroll_units(event) -> int:
+    """Windows/macOS/Linux 마우스 휠 이벤트를 Canvas yview 단위로 변환한다."""
+    if getattr(event, "num", None) == 4:
+        return -1
+    if getattr(event, "num", None) == 5:
+        return 1
+    delta = int(getattr(event, "delta", 0) or 0)
+    if delta == 0:
+        return 0
+    steps = max(1, abs(delta) // 120)
+    return -steps if delta > 0 else steps
+
+
+def _bind_canvas_wheel(canvas: tk.Canvas, *roots: tk.Misc) -> None:
+    """Canvas와 내부 자식 위젯 어디에 포인터가 있어도 휠 스크롤이 되게 묶는다."""
+    marker = f"_wheel_bound_{id(canvas)}"
+
+    def _on_wheel(event, _canvas=canvas):
+        units = _wheel_scroll_units(event)
+        if units and _widget_exists(_canvas):
+            _canvas.yview_scroll(units, "units")
+            return "break"
+        return None
+
+    def _bind_tree(widget: tk.Misc) -> None:
+        if not _widget_exists(widget) or getattr(widget, marker, False):
+            return
+        try:
+            widget.bind("<MouseWheel>", _on_wheel, add="+")
+            widget.bind("<Button-4>", _on_wheel, add="+")
+            widget.bind("<Button-5>", _on_wheel, add="+")
+            setattr(widget, marker, True)
+        except tk.TclError:
+            return
+        for child in widget.winfo_children():
+            _bind_tree(child)
+
+    _bind_tree(canvas)
+    for root in roots:
+        _bind_tree(root)
+
+
+def _bind_canvas_touch_drag(canvas: tk.Canvas, *roots: tk.Misc) -> None:
+    """터치 화면에서 내부 자식 위젯을 잡고 드래그해도 Canvas가 스크롤되게 한다."""
+    marker = f"_touch_bound_{id(canvas)}"
+
+    def _press(event, _canvas=canvas):
+        setattr(_canvas, "_touch_y", event.y_root)
+
+    def _drag(event, _canvas=canvas):
+        last_y = getattr(_canvas, "_touch_y", event.y_root)
+        units = int((last_y - event.y_root) / 5)
+        if units and _widget_exists(_canvas):
+            _canvas.yview_scroll(units, "units")
+            setattr(_canvas, "_touch_y", event.y_root)
+
+    def _bind_tree(widget: tk.Misc) -> None:
+        if not _widget_exists(widget) or getattr(widget, marker, False):
+            return
+        try:
+            widget.bind("<ButtonPress-1>", _press, add="+")
+            widget.bind("<B1-Motion>", _drag, add="+")
+            setattr(widget, marker, True)
+        except tk.TclError:
+            return
+        for child in widget.winfo_children():
+            _bind_tree(child)
+
+    _bind_tree(canvas)
+    for root in roots:
+        _bind_tree(root)
+
+
 def _existing_popup(func: "callable") -> "tk.Toplevel | None":
     """함수 속성에 저장된 팝업이 살아 있으면 반환하고, 죽었으면 참조를 정리한다."""
     popup = getattr(func, "_popup", None)
@@ -4786,26 +4859,8 @@ class CafeKioskApp:
         menu_canvas.pack(side="left", fill="both", expand=True, pady=(0, 6))
         menu_scrollbar.pack(side="right", fill="y")
 
-        # 마우스 휠 스크롤 (Windows/macOS/Linux 대응)
-        # bind (bind_all 대신) → 두 윈도우 간 스크롤 간섭 방지
-        menu_canvas.bind("<MouseWheel>",
-            lambda e: menu_canvas.yview_scroll(-1 * (e.delta // 120), "units"))
-        menu_canvas.bind("<Button-4>",
-            lambda e: menu_canvas.yview_scroll(-1, "units"))
-        menu_canvas.bind("<Button-5>",
-            lambda e: menu_canvas.yview_scroll(1, "units"))
-
-        # 터치스크린 드래그 스크롤 (Raspberry Pi 7인치 디스플레이 대응)
-        # menu_btn_frame 에도 동일 바인딩 → 메뉴 버튼 사이 빈 공간 드래그 처리
+        # 마우스 휠/터치 드래그 스크롤 (내부 버튼 위에서도 동작)
         menu_canvas._touch_y = 0
-        for _w in (menu_canvas, self.menu_btn_frame):
-            _w.bind("<ButtonPress-1>",
-                lambda e: setattr(menu_canvas, "_touch_y", e.y_root))
-            _w.bind("<B1-Motion>", lambda e: (
-                menu_canvas.yview_scroll(
-                    int((menu_canvas._touch_y - e.y_root) / 5), "units"),
-                setattr(menu_canvas, "_touch_y", e.y_root)
-            ))
 
         self._menu_buttons: dict[str, tk.Button] = {}
         self._menu_price_labels: dict[str, tk.Label] = {}
@@ -4829,10 +4884,6 @@ class CafeKioskApp:
 
                 row = tk.Frame(self.menu_btn_frame, bg=PANEL_BG)
                 row.pack(fill="x", padx=4, pady=2)
-                row.bind("<B1-Motion>", lambda e, _c=menu_canvas: (
-                    _c.yview_scroll(int((_c._touch_y - e.y_root) / 5), "units"),
-                    setattr(_c, "_touch_y", e.y_root)
-                ))
 
                 # 클릭 시 _on_menu_touch() 호출
                 # lambda default 인자(n=name, p=price)로 closure 이슈 방지
@@ -4856,6 +4907,9 @@ class CafeKioskApp:
                 price_lbl.pack(side="right", padx=(0, 4))
                 self._menu_price_labels[name] = price_lbl
 
+        _bind_canvas_wheel(menu_canvas, self.menu_btn_frame)
+        _bind_canvas_touch_drag(menu_canvas, self.menu_btn_frame)
+
         # ── 중앙: 장바구니 패널 ───────────────────────
         cart_outer = tk.Frame(content, bg=PANEL_BG, bd=0)
         if TINY_SCREEN:
@@ -4875,13 +4929,20 @@ class CafeKioskApp:
         cart_canvas.configure(yscrollcommand=cart_scrollbar.set)
 
         self.cart_item_frame = tk.Frame(cart_canvas, bg=CART_BG)
-        cart_canvas.create_window((0, 0), window=self.cart_item_frame, anchor="nw")
+        self._cart_canvas = cart_canvas
+        self._cart_canvas_window = cart_canvas.create_window((0, 0), window=self.cart_item_frame, anchor="nw")
         self.cart_item_frame.bind(
             "<Configure>",
             lambda e: cart_canvas.configure(scrollregion=cart_canvas.bbox("all"))
         )
+        cart_canvas.bind(
+            "<Configure>",
+            lambda e: cart_canvas.itemconfig(self._cart_canvas_window, width=max(1, e.width))
+        )
         cart_canvas.pack(side="left", fill="both", expand=True, pady=(0, 6))
         cart_scrollbar.pack(side="right", fill="y")
+        _bind_canvas_wheel(cart_canvas, self.cart_item_frame)
+        _bind_canvas_touch_drag(cart_canvas, self.cart_item_frame)
 
         # 합계 레이블 (장바구니 하단 고정)
         self.cart_total_var = tk.StringVar(value="합계:  0원")
@@ -5125,10 +5186,8 @@ class CafeKioskApp:
             "<Configure>",
             lambda e: settings_canvas.itemconfig(outer_window, width=e.width)
         )
-        settings_canvas.bind("<MouseWheel>",
-            lambda e: settings_canvas.yview_scroll(-1 * (e.delta // 120), "units"))
-        settings_canvas.bind("<Button-4>", lambda _e: settings_canvas.yview_scroll(-1, "units"))
-        settings_canvas.bind("<Button-5>", lambda _e: settings_canvas.yview_scroll(1, "units"))
+        _bind_canvas_wheel(settings_canvas, outer)
+        _bind_canvas_touch_drag(settings_canvas, outer)
 
         header = tk.Frame(outer, bg=SETTINGS_BG)
         header.pack(fill="x", pady=(0, _px(10)))
@@ -5471,6 +5530,8 @@ class CafeKioskApp:
                  font=(FONT_UI, _fs(9)),
                  bg=SETTINGS_BG, fg="#a0c4ff", anchor="w").pack(fill="x")
         _update_soldout_status()
+        _bind_canvas_wheel(settings_canvas, outer)
+        _bind_canvas_touch_drag(settings_canvas, outer)
 
         _safe_lift(win, parent)
 
@@ -5577,6 +5638,8 @@ class CafeKioskApp:
 
                 self.cart_total_var.set(f"합계:  {total:,}원")
             finally:
+                _bind_canvas_wheel(self._cart_canvas, self.cart_item_frame)
+                _bind_canvas_touch_drag(self._cart_canvas, self.cart_item_frame)
                 self._cart_refresh_pending = False
                 if self._cart_refresh_requested:
                     self._cart_refresh_requested = False
@@ -7287,26 +7350,10 @@ class KioskScreen:
         self._grid_canvas.pack(side="left", fill="both", expand=True)
         grid_sb.pack(side="right", fill="y")
 
-        # 마우스 휠 스크롤 (Windows/macOS/Linux)
-        self._grid_canvas.bind("<MouseWheel>",
-            lambda e: self._grid_canvas.yview_scroll(
-                -1 * (e.delta // 120), "units"))
-        self._grid_canvas.bind("<Button-4>",
-            lambda e: self._grid_canvas.yview_scroll(-1, "units"))
-        self._grid_canvas.bind("<Button-5>",
-            lambda e: self._grid_canvas.yview_scroll(1, "units"))
-
-        # 터치스크린 드래그 스크롤 (Raspberry Pi 7인치 디스플레이 대응)
-        # _grid_frame 에도 동일 바인딩 → 카드 사이 빈 공간에서 시작한 드래그 처리
+        # 마우스 휠/터치 드래그 스크롤 (내부 카드 위에서도 동작)
         self._grid_canvas._touch_y = 0
-        for _w in (self._grid_canvas, self._grid_frame):
-            _w.bind("<ButtonPress-1>",
-                lambda e: setattr(self._grid_canvas, "_touch_y", e.y_root))
-            _w.bind("<B1-Motion>", lambda e: (
-                self._grid_canvas.yview_scroll(
-                    int((self._grid_canvas._touch_y - e.y_root) / 5), "units"),
-                setattr(self._grid_canvas, "_touch_y", e.y_root)
-            ))
+        _bind_canvas_wheel(self._grid_canvas, self._grid_frame)
+        _bind_canvas_touch_drag(self._grid_canvas, self._grid_frame)
 
         # ── 우측: 장바구니 패널 (고정 너비, 창 폭 기준으로 결정) ────────
         # pack_propagate(False) 로 자식 위젯이 너비를 변경하지 못하게 고정
@@ -7326,10 +7373,29 @@ class KioskScreen:
 
         tk.Frame(cart_panel, bg=self.C_CART_SEP, height=2).pack(fill="x")
 
-        # 장바구니 항목이 동적으로 추가/삭제되는 영역
-        self._kiosk_cart_frame = tk.Frame(cart_panel, bg=self.C_CART_BG)
-        self._kiosk_cart_frame.pack(fill="both", expand=True,
-                                    padx=8, pady=6)
+        # 장바구니 항목이 많아질 때도 스크롤 가능하도록 Canvas 안에 배치
+        cart_scroll_area = tk.Frame(cart_panel, bg=self.C_CART_BG)
+        cart_scroll_area.pack(fill="both", expand=True, padx=8, pady=6)
+        self._kiosk_cart_canvas = tk.Canvas(
+            cart_scroll_area, bg=self.C_CART_BG, highlightthickness=0)
+        kiosk_cart_sb = tk.Scrollbar(
+            cart_scroll_area, orient="vertical", command=self._kiosk_cart_canvas.yview)
+        self._kiosk_cart_canvas.configure(yscrollcommand=kiosk_cart_sb.set)
+        self._kiosk_cart_frame = tk.Frame(self._kiosk_cart_canvas, bg=self.C_CART_BG)
+        self._kiosk_cart_window = self._kiosk_cart_canvas.create_window(
+            (0, 0), window=self._kiosk_cart_frame, anchor="nw")
+        self._kiosk_cart_frame.bind(
+            "<Configure>",
+            lambda _e: self._kiosk_cart_canvas.configure(
+                scrollregion=self._kiosk_cart_canvas.bbox("all")))
+        self._kiosk_cart_canvas.bind(
+            "<Configure>",
+            lambda e: self._kiosk_cart_canvas.itemconfig(
+                self._kiosk_cart_window, width=max(1, e.width)))
+        self._kiosk_cart_canvas.pack(side="left", fill="both", expand=True)
+        kiosk_cart_sb.pack(side="right", fill="y")
+        _bind_canvas_wheel(self._kiosk_cart_canvas, self._kiosk_cart_frame)
+        _bind_canvas_touch_drag(self._kiosk_cart_canvas, self._kiosk_cart_frame)
 
         tk.Frame(cart_panel, bg=self.C_CART_SEP, height=2).pack(fill="x")
 
@@ -7549,14 +7615,6 @@ class KioskScreen:
                                     lambda e, n=name, p=price: self._add_item(n, p))
             click_widgets = [card, accent_bar, inner]
 
-            # 터치 드래그 스크롤: 카드 배경 프레임에서 시작한 드래그도 캔버스로 전달
-            for _fw in (card_outer, card, inner):
-                _fw.bind("<B1-Motion>", lambda e: (
-                    self._grid_canvas.yview_scroll(
-                        int((self._grid_canvas._touch_y - e.y_root) / 5), "units"),
-                    setattr(self._grid_canvas, "_touch_y", e.y_root)
-                ))
-
             # 메뉴 이미지 (없으면 이모지 폴백) — 이미지 터치로 장바구니에 담기
             img_path = _get_menu_image_path(name)
             if PIL_AVAILABLE and img_path:
@@ -7636,6 +7694,8 @@ class KioskScreen:
         self._rendered_grid_category = self._current_cat
         self._rendered_grid_cols = cols
         self._rendered_grid_img_size = img_size
+        _bind_canvas_wheel(self._grid_canvas, self._grid_frame)
+        _bind_canvas_touch_drag(self._grid_canvas, self._grid_frame)
         self._grid_canvas.yview_moveto(0)
 
     def _refresh_menu_card_states(self) -> None:
@@ -7773,6 +7833,8 @@ class KioskScreen:
 
                 self._kiosk_total_var.set(f"합계:  {total:,}원")
             finally:
+                _bind_canvas_wheel(self._kiosk_cart_canvas, self._kiosk_cart_frame)
+                _bind_canvas_touch_drag(self._kiosk_cart_canvas, self._kiosk_cart_frame)
                 self._cart_refresh_pending = False
                 if self._cart_refresh_requested:
                     self._cart_refresh_requested = False
