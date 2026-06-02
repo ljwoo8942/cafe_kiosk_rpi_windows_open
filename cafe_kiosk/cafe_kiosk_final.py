@@ -2350,6 +2350,62 @@ def show_order_complete_popup(root: tk.Tk, receipt: str, wait_min: int) -> None:
     threading.Thread(target=_close_after_tts_done, daemon=True).start()
 
 
+def show_empty_cart_notice(root: tk.Misc) -> None:
+    """빈 장바구니 상태의 주문 시도를 단일 비차단 팝업으로 안내한다."""
+    existing = _existing_popup(show_empty_cart_notice)
+    if existing is not None:
+        _safe_lift(existing, root)
+        return
+
+    owner = _popup_owner(root)
+    popup = tk.Toplevel(owner)
+    popup.title("알림")
+    popup.resizable(False, False)
+    popup.configure(bg="#fff8f0")
+    _setup_modal_popup(popup, owner)
+    show_empty_cart_notice._popup = popup
+
+    owner.update_idletasks()
+    base_w = owner.winfo_width()
+    base_h = owner.winfo_height()
+    if base_w <= 1 or base_h <= 1:
+        base_w = owner.winfo_screenwidth()
+        base_h = owner.winfo_screenheight()
+    pw = max(300, min(420, base_w - 24))
+    ph = max(180, min(240, base_h - 24))
+    _center_popup_on_owner(popup, owner, pw, ph)
+
+    def _close() -> None:
+        if not _widget_exists(popup):
+            return
+        try:
+            popup.grab_release()
+        except tk.TclError:
+            pass
+        try:
+            popup.destroy()
+        except tk.TclError:
+            pass
+
+    tk.Label(popup, text="장바구니가 비어 있습니다",
+             font=(FONT_UI, _fs(17), "bold"),
+             bg="#fff8f0", fg="#2b2118").pack(pady=(_px(24), _px(8)))
+    tk.Label(popup, text="메뉴를 먼저 선택해 주세요.",
+             font=(FONT_UI, _fs(12)),
+             bg="#fff8f0", fg="#7c5f45").pack(pady=(0, _px(16)))
+    tk.Button(popup, text="확인",
+              font=(FONT_UI, _fs(12), "bold"),
+              bg="#c8602a", fg="white",
+              activebackground="#a34e21", activeforeground="white",
+              relief="flat", padx=_px(28), pady=_px(7),
+              cursor="hand2", command=_close).pack()
+
+    popup.protocol("WM_DELETE_WINDOW", _close)
+    popup.after(1800, _close)
+    _speak_if_idle("장바구니가 비어 있습니다. 먼저 메뉴를 추가해 주세요.")
+    log_app_event("Empty cart order attempt notice shown")
+
+
 def show_order_type_popup(root: tk.Tk, on_selected: "callable") -> None:
     """
     매장/테이크 아웃 선택 커스텀 팝업.
@@ -2357,7 +2413,7 @@ def show_order_type_popup(root: tk.Tk, on_selected: "callable") -> None:
     - 이용 방식 선택 시 on_selected(order_type) 호출
     """
     if not order_list:
-        messagebox.showwarning("알림", "장바구니가 비어 있습니다.\n메뉴를 먼저 선택해 주세요.")
+        show_empty_cart_notice(root)
         return
 
     existing = _existing_popup(show_order_type_popup)
@@ -2458,7 +2514,7 @@ def show_final_order_confirm_popup(root: tk.Tk, order_type: str,
     - [결제하기]는 on_confirm()을 호출한다.
     """
     if not order_list:
-        messagebox.showwarning("알림", "장바구니가 비어 있습니다.\n메뉴를 먼저 선택해 주세요.")
+        show_empty_cart_notice(root)
         return
 
     existing = _existing_popup(show_final_order_confirm_popup)
@@ -2603,7 +2659,7 @@ def show_payment_method_popup(root: tk.Tk, on_paid: "callable") -> None:
     - 결제수단 카드 선택 시 on_paid(payment_method) 호출
     """
     if not order_list:
-        messagebox.showwarning("알림", "장바구니가 비어 있습니다.\n메뉴를 먼저 선택해 주세요.")
+        show_empty_cart_notice(root)
         return
 
     existing = _existing_popup(show_payment_method_popup)
@@ -2746,7 +2802,7 @@ def show_receipt_issue_popup(root: tk.Tk, on_selected: "callable") -> None:
     - [발행] 또는 [미발행] 선택 시 on_selected(issue_receipt: bool) 호출
     """
     if not order_list:
-        messagebox.showwarning("알림", "장바구니가 비어 있습니다.\n메뉴를 먼저 선택해 주세요.")
+        show_empty_cart_notice(root)
         return
 
     existing = _existing_popup(show_receipt_issue_popup)
@@ -8211,6 +8267,8 @@ class KioskScreen:
         self._rendered_grid_img_size = 0
         self._grid_resize_after_id = None
         self._menu_card_widgets: dict[str, dict] = {}
+        self._order_confirm_pending = False
+        self._order_button: "tk.Button | None" = None
 
         self._build_ui()
         self._refresh_cart()   # 초기 장바구니 표시
@@ -8379,14 +8437,15 @@ class KioskScreen:
         act_frame.pack(fill="x", padx=10)
 
         # [주문하기]: 확인 팝업 → 결제 처리
-        tk.Button(act_frame,
-                  text="주문하기",
-                  font=(FONT_UI, _fs(13), "bold"),
-                  bg=self.C_ORDER_BTN, fg="white",
-                  activebackground=self.C_ORDER_HV, activeforeground="white",
-                  relief="flat", pady=12, cursor="hand2",
-                  command=self._on_order_confirm
-                  ).pack(fill="x", pady=(0, 8))
+        self._order_button = tk.Button(act_frame,
+                                       text="주문하기",
+                                       font=(FONT_UI, _fs(13), "bold"),
+                                       bg=self.C_ORDER_BTN, fg="white",
+                                       activebackground=self.C_ORDER_HV, activeforeground="white",
+                                       disabledforeground="#f4d7c7",
+                                       relief="flat", pady=12, cursor="hand2",
+                                       command=self._on_order_confirm)
+        self._order_button.pack(fill="x", pady=(0, 8))
 
         # [전체 취소]: 장바구니 비우기
         tk.Button(act_frame,
@@ -8915,45 +8974,81 @@ class KioskScreen:
         이용 방식과 결제수단 선택 팝업을 표시한 뒤 finalize_order() 를 호출한다.
         """
         self._notify_user_interaction()
-        def _show_dialog():
-            if not order_list:
-                messagebox.showwarning("알림", "장바구니가 비어 있습니다.\n메뉴를 먼저 선택해 주세요.")
-                return
+        if self._order_confirm_pending:
+            log_app_event("Ignored repeated kiosk order button press while pending")
+            return
+        self._order_confirm_pending = True
+        if self._order_button is not None:
+            try:
+                self._order_button.config(state="disabled")
+            except tk.TclError:
+                pass
 
-            def _show_final_confirm(order_type: str) -> None:
-                top = self.container.winfo_toplevel()
-                show_final_order_confirm_popup(
-                    top, order_type,
-                    lambda: show_payment_method_popup(
-                        top,
-                        lambda method: show_payment_wait_popup(
+        def _unlock_order_button(delay_ms: int = 900) -> None:
+            def _unlock() -> None:
+                self._order_confirm_pending = False
+                if self._order_button is not None and _widget_exists(self._order_button):
+                    try:
+                        self._order_button.config(state="normal")
+                    except tk.TclError:
+                        pass
+            try:
+                self.root.after(delay_ms, _unlock)
+            except tk.TclError:
+                self._order_confirm_pending = False
+
+        def _show_dialog():
+            try:
+                if not order_list:
+                    show_empty_cart_notice(self.container.winfo_toplevel())
+                    _unlock_order_button(1200)
+                    return
+
+                def _show_final_confirm(order_type: str) -> None:
+                    top = self.container.winfo_toplevel()
+                    show_final_order_confirm_popup(
+                        top, order_type,
+                        lambda: show_payment_method_popup(
                             top,
-                            method,
-                            lambda m=method: show_receipt_issue_popup(
+                            lambda method: show_payment_wait_popup(
                                 top,
-                                lambda issue: _paid(m, order_type, issue)
+                                method,
+                                lambda m=method: show_receipt_issue_popup(
+                                    top,
+                                    lambda issue: _paid(m, order_type, issue)
+                                )
                             )
                         )
                     )
-                )
+                    _unlock_order_button(900)
 
-            def _paid(method: str, order_type: str, issue_receipt: bool) -> None:
-                def _do_finalize():
-                    wait = calculate_wait_minutes(order_list)   # 결제 전 대기시간 계산
-                    receipt = finalize_order()   # 결제 처리 + TTS + order_list 초기화
-                    if "⚠️" not in receipt:
-                        receipt_status = "발행" if issue_receipt else "미발행"
-                        receipt = (
-                            f"{receipt}\n"
-                            f"  이용 방식: {order_type}\n"
-                            f"  결제수단: {method}\n"
-                            f"  영수증: {receipt_status}"
-                        )
-                    self.on_order_change()       # 두 윈도우 장바구니 UI 갱신
-                    self.root.after(0, lambda r=receipt, w=wait: self.on_order_complete(r, w))
-                threading.Thread(target=_do_finalize, daemon=True).start()
+                def _paid(method: str, order_type: str, issue_receipt: bool) -> None:
+                    def _do_finalize():
+                        wait = calculate_wait_minutes(order_list)   # 결제 전 대기시간 계산
+                        receipt = finalize_order()   # 결제 처리 + TTS + order_list 초기화
+                        if "⚠️" not in receipt:
+                            receipt_status = "발행" if issue_receipt else "미발행"
+                            receipt = (
+                                f"{receipt}\n"
+                                f"  이용 방식: {order_type}\n"
+                                f"  결제수단: {method}\n"
+                                f"  영수증: {receipt_status}"
+                            )
+                        self.on_order_change()       # 두 윈도우 장바구니 UI 갱신
+                        self.root.after(0, lambda r=receipt, w=wait: self.on_order_complete(r, w))
+                    threading.Thread(target=_do_finalize, daemon=True).start()
 
-            show_order_type_popup(self.container.winfo_toplevel(), _show_final_confirm)
+                show_order_type_popup(self.container.winfo_toplevel(), _show_final_confirm)
+                _unlock_order_button(900)
+            except Exception as exc:
+                self._order_confirm_pending = False
+                if self._order_button is not None and _widget_exists(self._order_button):
+                    try:
+                        self._order_button.config(state="normal")
+                    except tk.TclError:
+                        pass
+                log_error_event(f"Kiosk order confirm failed: {exc}")
+                show_empty_cart_notice(self.container.winfo_toplevel())
 
         self.root.after(0, _show_dialog)
 
