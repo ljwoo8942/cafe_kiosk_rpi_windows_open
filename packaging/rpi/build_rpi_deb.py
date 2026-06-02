@@ -30,8 +30,8 @@ Section: utils
 Priority: optional
 Architecture: all
 Maintainer: 이지우 <ljwoo8942@gmail.com>
-Depends: python3, python3-tk, python3-pip, python3-venv, python3-dev, build-essential, pkg-config, x11-xserver-utils, alsa-utils, portaudio19-dev, libportaudio2, libportaudiocpp0, libasound2-dev, mpg123, espeak-ng, espeak-ng-data, fonts-noto-cjk, fonts-noto-color-emoji, python3-pil, libjpeg-dev, zlib1g-dev
-Recommends: git, python3-pyaudio, python3-pil.imagetk
+Depends: python3, python3-tk, python3-pip, python3-venv, python3-dev, build-essential, pkg-config, x11-xserver-utils, alsa-utils, portaudio19-dev, libportaudio2, libportaudiocpp0, libasound2-dev, python3-pyaudio, mpg123, espeak-ng, espeak-ng-data, fonts-noto-cjk, fonts-noto-color-emoji, python3-pil, libjpeg-dev, zlib1g-dev
+Recommends: git, python3-pil.imagetk
 Description: Voice guided cafe kiosk for Raspberry Pi and Linux
  BEAN & BREW Cafe Kiosk is a tkinter based cafe ordering system
  focused on voice recognition and voice guidance for accessibility.

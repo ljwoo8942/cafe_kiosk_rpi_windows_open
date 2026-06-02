@@ -4,7 +4,7 @@
 #
 # [권장 환경]
 #   Raspberry Pi OS Bookworm (64-bit) / Ubuntu 22.04+
-#   Python 3.9 ~ 3.12   (Bookworm 기본 3.11, 3.12 도 지원)
+#   Python 3.9 ~ 3.13   (Bookworm 기본 3.11, 3.12/3.13 도 지원)
 #
 # [중요]
 #   requirements-rpi.txt 는 pip 패키지만 설치합니다.
@@ -29,6 +29,7 @@
 #        libportaudio2            `# PortAudio 런타임` \
 #        libportaudiocpp0         `# PortAudio C++ 런타임` \
 #        libasound2-dev           `# ALSA 사운드` \
+#        python3-pyaudio          `# PyAudio apt 패키지` \
 #        mpg123                   `# Edge TTS mp3 재생` \
 #        espeak-ng                `# pyttsx3 / TTS 폴백 엔진` \
 #        espeak-ng-data           `# espeak-ng 한국어 음성` \
@@ -90,7 +91,8 @@ SpeechRecognition>=3.10.0
 # ── 마이크 입력 (portaudio19-dev + libasound2-dev 선행 필수) ─
 # RPi 에서 pip 빌드 시 약 2~3 분 소요
 # 빌드 실패 시: sudo apt install -y python3-pyaudio
-PyAudio>=0.2.14
+# Raspberry Pi OS의 apt 패키지는 0.2.13 계열일 수 있어 이 버전도 허용한다.
+PyAudio>=0.2.13
 
 # ── 오프라인 TTS (espeak-ng 폴백 사용) ─────────────────
 # 코드는 pyttsx3 한국어 음성이 없으면 espeak-ng 로 자동 폴백.

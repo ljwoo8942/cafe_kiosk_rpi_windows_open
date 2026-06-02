@@ -24,6 +24,7 @@ APT_PACKAGES=(
   libportaudio2
   libportaudiocpp0
   libasound2-dev
+  python3-pyaudio
   mpg123
   espeak-ng
   espeak-ng-data

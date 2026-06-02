@@ -92,7 +92,7 @@ function New-PortableZip {
     if (Test-Path -LiteralPath $zip) {
         Remove-Item -LiteralPath $zip -Force
     }
-    Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -Force
+    Compress-Archive -Path $stage -DestinationPath $zip -Force
     Write-Host "생성 완료: $zip" -ForegroundColor Green
 }
 
