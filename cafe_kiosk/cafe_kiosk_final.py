@@ -6063,21 +6063,75 @@ class CafeKioskApp:
             self._settings_button.config(text="✕ 닫기")
         self._mark_update_notice_seen()
 
-        settings_canvas = tk.Canvas(win, bg=SETTINGS_BG, highlightthickness=0)
-        settings_scroll = tk.Scrollbar(win, orient="vertical", command=settings_canvas.yview)
-        settings_canvas.configure(yscrollcommand=settings_scroll.set)
+        settings_hint_var = tk.StringVar(value="")
+        settings_hint = tk.Label(
+            win, textvariable=settings_hint_var,
+            font=(FONT_UI, _fs(9), "bold"),
+            bg="#08233f", fg="#ffd166",
+            anchor="center", pady=_px(3)
+        )
+        settings_hint.pack(side="bottom", fill="x")
+
+        scroll_area = tk.Frame(win, bg=SETTINGS_BG)
+        scroll_area.pack(side="top", fill="both", expand=True)
+
+        scroll_col = tk.Frame(scroll_area, bg="#7ecfff",
+                              width=max(20, _px(22)))
+        scroll_col.pack(side="right", fill="y")
+        scroll_col.pack_propagate(False)
+
+        settings_canvas = tk.Canvas(scroll_area, bg=SETTINGS_BG, highlightthickness=0)
+        settings_scroll = tk.Scrollbar(
+            scroll_col, orient="vertical", command=settings_canvas.yview,
+            width=max(16, _px(18)), relief="flat", bd=0,
+            troughcolor="#08233f", bg="#7ecfff", activebackground="#ffd166",
+            elementborderwidth=0, highlightthickness=0
+        )
+
+        def _refresh_settings_scroll_hint() -> None:
+            try:
+                first, last = settings_canvas.yview()
+                if last < 0.995:
+                    settings_hint_var.set("아래 항목 더 있음 - 스크롤하세요")
+                elif first > 0.005:
+                    settings_hint_var.set("위 항목 더 있음 - 위로 스크롤하세요")
+                else:
+                    settings_hint_var.set("")
+            except tk.TclError:
+                pass
+
+        def _settings_yscroll(first: str, last: str) -> None:
+            settings_scroll.set(first, last)
+            try:
+                f, l = float(first), float(last)
+                if l < 0.995:
+                    settings_hint_var.set("아래 항목 더 있음 - 스크롤하세요")
+                elif f > 0.005:
+                    settings_hint_var.set("위 항목 더 있음 - 위로 스크롤하세요")
+                else:
+                    settings_hint_var.set("")
+            except (TypeError, ValueError, tk.TclError):
+                pass
+
+        settings_canvas.configure(yscrollcommand=_settings_yscroll)
         settings_canvas.pack(side="left", fill="both", expand=True)
-        settings_scroll.pack(side="right", fill="y")
+        settings_scroll.pack(fill="y", expand=True, padx=_px(2), pady=_px(8))
 
         outer = tk.Frame(settings_canvas, bg=SETTINGS_BG, padx=_px(14), pady=_px(12))
         outer_window = settings_canvas.create_window((0, 0), window=outer, anchor="nw")
         outer.bind(
             "<Configure>",
-            lambda _e: settings_canvas.configure(scrollregion=settings_canvas.bbox("all"))
+            lambda _e: (
+                settings_canvas.configure(scrollregion=settings_canvas.bbox("all")),
+                _refresh_settings_scroll_hint()
+            )
         )
         settings_canvas.bind(
             "<Configure>",
-            lambda e: settings_canvas.itemconfig(outer_window, width=e.width)
+            lambda e: (
+                settings_canvas.itemconfig(outer_window, width=max(1, e.width)),
+                _refresh_settings_scroll_hint()
+            )
         )
         _bind_canvas_wheel(settings_canvas, outer)
         _bind_canvas_touch_drag(settings_canvas, outer)
