@@ -1599,6 +1599,19 @@ def _existing_popup(func: "callable") -> "tk.Toplevel | None":
     return None
 
 
+def _once_callback(callback: "callable") -> "callable":
+    """터치가 짧게 여러 번 들어와도 콜백 본문은 한 번만 실행한다."""
+    called = {"value": False}
+
+    def _wrapped(*args, **kwargs):
+        if called["value"]:
+            return None
+        called["value"] = True
+        return callback(*args, **kwargs)
+
+    return _wrapped
+
+
 def _safe_lift(widget: tk.Misc, owner: "tk.Misc | None" = None) -> None:
     """환경별 창 관리자 차이로 lift/focus 가 실패해도 앱이 멈추지 않게 한다."""
     try:
@@ -1678,11 +1691,13 @@ def call_staff(root: tk.Tk) -> None:
     - GUI: 화면 중앙에 5초 후 자동 닫히는 안내 팝업 표시
     - 팝업이 이미 열려 있으면 중복 생성하지 않는다.
     """
-    speak("직원이 오고 있습니다. 잠시만 기다려 주십시오.")
-
     # 중복 팝업 방지: 이미 열린 팝업이 있으면 무시
-    if _existing_popup(call_staff) is not None:
+    existing = _existing_popup(call_staff)
+    if existing is not None:
+        _safe_lift(existing, root)
         return
+
+    speak("직원이 오고 있습니다. 잠시만 기다려 주십시오.")
 
     owner = _popup_owner(root)
     popup = tk.Toplevel(owner)
@@ -1892,6 +1907,12 @@ def show_recommendation_popup(root: tk.Tk,
     global _rec_popup_images
     _rec_popup_images = []  # 이전 팝업 이미지 해제 후 새 팝업 이미지 보관
 
+    def _add_recommendation(name: str, price: int) -> None:
+        popup.destroy()
+        on_add(name, price)
+
+    _add_recommendation_once = _once_callback(_add_recommendation)
+
     # 헤더
     tk.Label(popup,
              text="오늘의 추천 메뉴",
@@ -1967,8 +1988,7 @@ def show_recommendation_popup(root: tk.Tk,
                   bg="#2980b9", fg="white",
                   activebackground="#1a6fa8", activeforeground="white",
                   relief="flat", pady=5, cursor="hand2",
-                  command=lambda n=name, p=price: (popup.destroy(),
-                                                   on_add(n, p))
+                  command=lambda n=name, p=price: _add_recommendation_once(n, p)
                   ).pack(fill="x", pady=(_px(8), 0))
 
     tk.Button(popup, text="닫기",
@@ -2021,9 +2041,11 @@ def ask_hot_ice(root: tk.Tk, name: str, base_price: int,
     hot_price  = max(0, base_price - HOT_DISCOUNT)
     ice_price  = base_price
 
-    def _choose(option: str, price: int) -> None:
+    def _choose_selected(option: str, price: int) -> None:
         popup.destroy()
         on_select(option, price)
+
+    _choose = _once_callback(_choose_selected)
 
     # RPi에서 이모지 폰트가 깨질 수 있어 텍스트만 사용한다.
     tk.Button(btn_frame,
@@ -2095,9 +2117,11 @@ def ask_size_option(root: tk.Tk, name: str, option: str, base_price: int,
     regular_price = base_price
     large_price = base_price + SIZE_UP_SURCHARGE
 
-    def _choose(size: str, price: int) -> None:
+    def _choose_selected(size: str, price: int) -> None:
         popup.destroy()
         on_select(_combine_drink_option(option, size), price)
+
+    _choose = _once_callback(_choose_selected)
 
     tk.Button(btn_frame,
               text=f"일반\n{regular_price:,}원",
@@ -2172,12 +2196,14 @@ def ask_shot_option(root: tk.Tk, name: str, option: str, base_price: int,
 
     shot_price = base_price + SHOT_SURCHARGE
 
-    def _choose(extra_shot: bool) -> None:
+    def _choose_selected(extra_shot: bool) -> None:
         popup.destroy()
         if extra_shot:
             on_select(_append_drink_option_part(option, "샷추가"), shot_price)
         else:
             on_select(option, base_price)
+
+    _choose = _once_callback(_choose_selected)
 
     tk.Button(btn_frame,
               text=f"기본\n{base_price:,}원",
@@ -2445,9 +2471,11 @@ def show_order_type_popup(root: tk.Tk, on_selected: "callable") -> None:
         if _widget_exists(popup):
             popup.destroy()
 
-    def _select(order_type: str) -> None:
+    def _select_order_type(order_type: str) -> None:
         _close()
         on_selected(order_type)
+
+    _select = _once_callback(_select_order_type)
 
     footer = tk.Frame(popup, bg="#f5eadf", pady=_px(10))
     footer.pack(fill="x", side="bottom")
@@ -2548,9 +2576,11 @@ def show_final_order_confirm_popup(root: tk.Tk, order_type: str,
         if _widget_exists(popup):
             popup.destroy()
 
-    def _confirm() -> None:
+    def _confirm_order() -> None:
         _close()
         on_confirm()
+
+    _confirm = _once_callback(_confirm_order)
 
     try:
         footer = tk.Frame(popup, bg="#eef2f7", padx=_px(14), pady=_px(10))
@@ -2689,9 +2719,11 @@ def show_payment_method_popup(root: tk.Tk, on_paid: "callable") -> None:
         if _widget_exists(popup):
             popup.destroy()
 
-    def _select(method: str) -> None:
+    def _select_payment_method(method: str) -> None:
         _close()
         on_paid(method)
+
+    _select = _once_callback(_select_payment_method)
 
     total_qty = sum(i["qty"] for i in order_list)
     total_price = sum(i["price"] * i["qty"] for i in order_list)
@@ -2834,9 +2866,11 @@ def show_receipt_issue_popup(root: tk.Tk, on_selected: "callable") -> None:
         if _widget_exists(popup):
             popup.destroy()
 
-    def _select(issue_receipt: bool) -> None:
+    def _select_receipt(issue_receipt: bool) -> None:
         _close()
         on_selected(issue_receipt)
+
+    _select = _once_callback(_select_receipt)
 
     outer = tk.Frame(popup, bg="#fffaf0", padx=_px(20), pady=_px(18))
     outer.pack(fill="both", expand=True)
@@ -2945,9 +2979,11 @@ def show_payment_wait_popup(root: tk.Tk, method: str, on_done: "callable") -> No
         if _widget_exists(popup):
             popup.destroy()
 
-    def _finish() -> None:
+    def _finish_payment_wait() -> None:
         _close()
         on_done()
+
+    _finish = _once_callback(_finish_payment_wait)
 
     def _countdown(remaining: int) -> None:
         if not _widget_exists(popup):
@@ -4502,7 +4538,7 @@ def show_update_popup(root: tk.Tk) -> None:
     _center_popup_on_owner(popup, owner, pw, ph)
     show_update_popup._popup = popup
 
-    state = {"busy": False, "release": None, "can_apply": False}
+    state = {"busy": False, "release": None, "can_apply": False, "confirming_apply": False}
     status_var = tk.StringVar(value="업데이트 확인 버튼을 눌러 최신 버전을 확인하세요.")
 
     outer = tk.Frame(popup, bg="#102033", padx=_px(18), pady=_px(16))
@@ -4608,18 +4644,22 @@ def show_update_popup(root: tk.Tk) -> None:
             messagebox.showwarning("업데이트", str(result.get("message", "업데이트에 실패했습니다.")), parent=popup)
 
     def _start_apply() -> None:
-        if state["busy"] or not state["can_apply"]:
+        if state["busy"] or state["confirming_apply"] or not state["can_apply"]:
             return
         release_info = state.get("release")
         if not release_info:
             messagebox.showwarning("업데이트", "먼저 업데이트 확인을 실행해 주세요.", parent=popup)
             return
-        ok = messagebox.askyesno(
-            "업데이트 적용",
-            "최신 설치 파일을 다운로드하고 검증한 뒤 업데이트를 시작합니다.\n"
-            "적용 중 현재 프로그램이 종료될 수 있습니다.\n계속할까요?",
-            parent=popup
-        )
+        state["confirming_apply"] = True
+        try:
+            ok = messagebox.askyesno(
+                "업데이트 적용",
+                "최신 설치 파일을 다운로드하고 검증한 뒤 업데이트를 시작합니다.\n"
+                "적용 중 현재 프로그램이 종료될 수 있습니다.\n계속할까요?",
+                parent=popup
+            )
+        finally:
+            state["confirming_apply"] = False
         if not ok:
             return
         _set_busy(True)
@@ -4922,20 +4962,28 @@ def show_admin_stats_popup(root: tk.Tk) -> None:
             body.insert("end", "  기록된 실패 로그가 없습니다.\n")
         body.config(state="disabled")
 
+    reset_state = {"busy": False}
+
     def _reset_stats() -> None:
-        ok = messagebox.askyesno(
-            "로그 초기화",
-            "관리자 통계의 주문 이력과 음성 인식 로그를 모두 초기화하시겠습니까?",
-            parent=popup
-        )
-        if not ok:
+        if reset_state["busy"]:
             return
-        if not reset_admin_stats_history():
-            messagebox.showerror("로그 초기화", "DB 오류로 로그를 초기화하지 못했습니다.", parent=popup)
-            return
-        _render_stats()
-        messagebox.showinfo("로그 초기화", "관리자 통계 로그가 초기화되었습니다.", parent=popup)
-        speak("관리자 통계 로그가 초기화되었습니다.")
+        reset_state["busy"] = True
+        try:
+            ok = messagebox.askyesno(
+                "로그 초기화",
+                "관리자 통계의 주문 이력과 음성 인식 로그를 모두 초기화하시겠습니까?",
+                parent=popup
+            )
+            if not ok:
+                return
+            if not reset_admin_stats_history():
+                messagebox.showerror("로그 초기화", "DB 오류로 로그를 초기화하지 못했습니다.", parent=popup)
+                return
+            _render_stats()
+            messagebox.showinfo("로그 초기화", "관리자 통계 로그가 초기화되었습니다.", parent=popup)
+            speak("관리자 통계 로그가 초기화되었습니다.")
+        finally:
+            reset_state["busy"] = False
 
     button_row = tk.Frame(outer, bg="#102033")
     button_row.grid(row=3, column=0, sticky="ew", pady=(_px(12), 0))
@@ -5688,6 +5736,7 @@ class CafeKioskApp:
         self._settings_alert_buttons: list[tk.Button] = []
         self._update_check_started = False
         self._update_notice: dict | None = None
+        self._payment_confirm_pending = False
         self._update_status_label = None
 
         # ── UI 빌드 ────────────────────────────────────
@@ -7258,10 +7307,21 @@ class CafeKioskApp:
     def _btn_confirm(self) -> None:
         """[📋 주문 확인] 버튼 → 이용 방식 선택 후 결제수단 선택 창 표시."""
         self._reset_log_for_new_interaction()
+        if self._payment_confirm_pending:
+            return
+        self._payment_confirm_pending = True
         self.root.after(0, self._show_payment_confirm)
 
     def _show_payment_confirm(self) -> None:
         """이용 방식과 최종 주문 확인 후 결제수단 선택 GUI를 표시한다."""
+        if not order_list:
+            show_empty_cart_notice(self.container.winfo_toplevel())
+            self.root.after(1200, self._unlock_payment_confirm)
+            return
+
+        def _unlock_after_popup() -> None:
+            self.root.after(900, self._unlock_payment_confirm)
+
         def _show_final_confirm(order_type: str) -> None:
             top = self.container.winfo_toplevel()
             show_final_order_confirm_popup(
@@ -7278,8 +7338,13 @@ class CafeKioskApp:
                     )
                 )
             )
+            _unlock_after_popup()
 
         show_order_type_popup(self.container.winfo_toplevel(), _show_final_confirm)
+        _unlock_after_popup()
+
+    def _unlock_payment_confirm(self) -> None:
+        self._payment_confirm_pending = False
 
     def _complete_paid_order(self, method: str, order_type: str,
                              issue_receipt: bool = False) -> None:
