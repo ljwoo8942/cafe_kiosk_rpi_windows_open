@@ -21,6 +21,7 @@ cafe_kiosk/*.db
 cafe_kiosk/*.db-*
 cafe_kiosk/cafe_kiosk_settings.json
 cafe_kiosk/tts_cache/
+logs/
 
 # Secrets / cloud credentials
 cafe_kiosk/*.json

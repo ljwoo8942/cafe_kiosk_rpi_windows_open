@@ -70,6 +70,8 @@ import tempfile      # Edge TTS 임시 음성 파일
 import hashlib       # Edge TTS 캐시 파일 키 생성
 import time          # TTS 종료 대기 후 안내창 초기화 타이밍 제어
 import fnmatch       # 업데이트 백업 제외 패턴 처리
+import logging
+from logging.handlers import RotatingFileHandler
 import urllib.request
 import urllib.error
 import zipfile
@@ -112,6 +114,164 @@ def _user_config_dir() -> str:
         base = os.environ.get("APPDATA") or os.path.expanduser("~")
         return os.path.join(base, "BEAN_BREW_Cafe_Kiosk")
     return os.path.join(os.path.expanduser("~"), ".config", "bean_brew_cafe_kiosk")
+
+
+LOG_DIR = os.path.join(_user_config_dir(), "logs")
+APP_LOG_PATH = os.path.join(LOG_DIR, "app.log")
+ERROR_LOG_PATH = os.path.join(LOG_DIR, "error.log")
+SPEECH_LOG_PATH = os.path.join(LOG_DIR, "speech.log")
+UPDATE_LOG_PATH = os.path.join(LOG_DIR, "update.log")
+
+APP_LOGGER = logging.getLogger("bean_brew.app")
+ERROR_LOGGER = logging.getLogger("bean_brew.error")
+SPEECH_LOGGER = logging.getLogger("bean_brew.speech")
+UPDATE_LOGGER = logging.getLogger("bean_brew.update")
+_LOGGING_READY = False
+
+
+class _TeeTextStream:
+    """콘솔 출력도 파일 로그에 남기되 원래 출력 동작은 유지한다."""
+
+    def __init__(self, original, logger: logging.Logger, level: int) -> None:
+        self.original = original
+        self.logger = logger
+        self.level = level
+        self._buffer = ""
+
+    def write(self, text: str) -> int:
+        try:
+            self.original.write(text)
+        except Exception:
+            pass
+
+        self._buffer += str(text)
+        while "\n" in self._buffer:
+            line, self._buffer = self._buffer.split("\n", 1)
+            line = line.rstrip()
+            if line:
+                try:
+                    self.logger.log(self.level, line)
+                except Exception:
+                    pass
+        return len(text)
+
+    def flush(self) -> None:
+        if self._buffer.strip():
+            try:
+                self.logger.log(self.level, self._buffer.strip())
+            except Exception:
+                pass
+            self._buffer = ""
+        try:
+            self.original.flush()
+        except Exception:
+            pass
+
+    def __getattr__(self, name: str):
+        return getattr(self.original, name)
+
+
+def _make_log_handler(path: str, level: int) -> RotatingFileHandler:
+    handler = RotatingFileHandler(
+        path, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
+    )
+    handler.setLevel(level)
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        "%Y-%m-%d %H:%M:%S",
+    ))
+    return handler
+
+
+def _safe_read_version_file() -> str:
+    try:
+        with open(APP_VERSION_FILE, "r", encoding="utf-8") as fp:
+            return fp.read().strip() or "0.0.0"
+    except OSError:
+        return "0.0.0"
+
+
+def setup_logging() -> None:
+    """앱/오류/음성/업데이트 로그 파일과 예외 자동 기록을 설정한다."""
+    global _LOGGING_READY, LOG_DIR, APP_LOG_PATH, ERROR_LOG_PATH, SPEECH_LOG_PATH, UPDATE_LOG_PATH
+    if _LOGGING_READY:
+        return
+
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+    except OSError:
+        LOG_DIR = os.path.join(PROJECT_DIR, "logs")
+        APP_LOG_PATH = os.path.join(LOG_DIR, "app.log")
+        ERROR_LOG_PATH = os.path.join(LOG_DIR, "error.log")
+        SPEECH_LOG_PATH = os.path.join(LOG_DIR, "speech.log")
+        UPDATE_LOG_PATH = os.path.join(LOG_DIR, "update.log")
+        os.makedirs(LOG_DIR, exist_ok=True)
+    for logger in (APP_LOGGER, ERROR_LOGGER, SPEECH_LOGGER, UPDATE_LOGGER):
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False
+        logger.handlers.clear()
+
+    APP_LOGGER.addHandler(_make_log_handler(APP_LOG_PATH, logging.INFO))
+    ERROR_LOGGER.addHandler(_make_log_handler(ERROR_LOG_PATH, logging.ERROR))
+    SPEECH_LOGGER.addHandler(_make_log_handler(SPEECH_LOG_PATH, logging.INFO))
+    UPDATE_LOGGER.addHandler(_make_log_handler(UPDATE_LOG_PATH, logging.INFO))
+
+    try:
+        sys.stdout = _TeeTextStream(sys.stdout, APP_LOGGER, logging.INFO)
+        sys.stderr = _TeeTextStream(sys.stderr, ERROR_LOGGER, logging.ERROR)
+    except Exception:
+        pass
+
+    def _sys_excepthook(exc_type, exc, tb):
+        ERROR_LOGGER.error("Unhandled exception", exc_info=(exc_type, exc, tb))
+        try:
+            sys.__excepthook__(exc_type, exc, tb)
+        except Exception:
+            pass
+
+    sys.excepthook = _sys_excepthook
+
+    if hasattr(threading, "excepthook"):
+        def _thread_excepthook(args):
+            ERROR_LOGGER.error(
+                "Unhandled thread exception: %s",
+                getattr(args.thread, "name", "unknown"),
+                exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+            )
+        threading.excepthook = _thread_excepthook
+
+    _LOGGING_READY = True
+    APP_LOGGER.info(
+        "Application start | version=%s | os=%s %s | python=%s | project=%s",
+        _safe_read_version_file(),
+        platform.system(),
+        platform.release(),
+        sys.version.replace("\n", " "),
+        PROJECT_DIR,
+    )
+
+
+def log_app_event(message: str) -> None:
+    if _LOGGING_READY:
+        APP_LOGGER.info(message)
+
+
+def log_error_event(message: str, exc_info=True) -> None:
+    if _LOGGING_READY:
+        ERROR_LOGGER.error(message, exc_info=exc_info)
+
+
+def log_speech_event(message: str) -> None:
+    if _LOGGING_READY:
+        SPEECH_LOGGER.info(message)
+
+
+def log_update_event(message: str) -> None:
+    if _LOGGING_READY:
+        UPDATE_LOGGER.info(message)
+
+
+setup_logging()
 
 
 def _dialogflow_candidate_paths() -> list[str]:
@@ -3316,6 +3476,7 @@ def init_db() -> None:
     conn.commit()
     conn.close()
     print("✅  DB 초기화 완료:", DB_PATH)
+    log_app_event(f"Database initialized: {DB_PATH}")
 
 
 def match_menu_from_db(text: str) -> "tuple[str, int] | None":
@@ -3373,6 +3534,7 @@ def save_order_to_db(items: list) -> "int | None":
         except sqlite3.Error:
             pass
         print(f"DB 주문 저장 실패: {exc}")
+        log_error_event(f"DB order save failed: {exc}")
         return None
     finally:
         conn.close()
@@ -3390,8 +3552,10 @@ def save_voice_log(raw_text: str, matched_menu: "str | None" = None) -> None:
             (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), str(raw_text), matched_menu)
         )
         conn.commit()
+        log_speech_event(f"voice_text={str(raw_text)[:120]} | matched={matched_menu or '-'}")
     except sqlite3.Error as exc:
         print(f"DB 음성 로그 저장 실패: {exc}")
+        log_error_event(f"DB voice log save failed: {exc}")
     finally:
         conn.close()
 
@@ -3629,10 +3793,12 @@ def _download_asset(asset: dict, target_dir: str, timeout: int = 60) -> dict:
     url = _download_url_for_asset(asset)
     name = str(asset.get("name") or os.path.basename(url) or "update.bin")
     if not url:
+        log_update_event("Download skipped: missing release asset URL")
         return {"ok": False, "message": "다운로드 URL을 찾지 못했습니다."}
 
     os.makedirs(target_dir, exist_ok=True)
     target = os.path.join(target_dir, name)
+    log_update_event(f"Download start: asset={name} target={target}")
     request = urllib.request.Request(
         url,
         headers={"User-Agent": "BEAN-BREW-Cafe-Kiosk"},
@@ -3641,6 +3807,7 @@ def _download_asset(asset: dict, target_dir: str, timeout: int = 60) -> dict:
         with urllib.request.urlopen(request, timeout=timeout) as response, open(target, "wb") as fp:
             shutil.copyfileobj(response, fp)
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        log_update_event(f"Download failed: asset={name} error={exc}")
         return {"ok": False, "message": "업데이트 파일 다운로드 실패", "detail": str(exc)}
 
     expected = _expected_sha256_for_asset(asset)
@@ -3666,6 +3833,7 @@ def _download_asset(asset: dict, target_dir: str, timeout: int = 60) -> dict:
             "detail": f"SHA256 불일치\n기대값: {expected}\n실제값: {actual}",
         }
 
+    log_update_event(f"Download verified: asset={name} sha256={actual}")
     return {
         "ok": True,
         "path": target,
@@ -3749,8 +3917,10 @@ def _create_update_backup(source_dir: str, label: str) -> dict:
         if file_count <= 0:
             return {"ok": False, "message": "백업할 프로그램 파일을 찾지 못했습니다.", "detail": backup_path}
     except (OSError, zipfile.BadZipFile) as exc:
+        log_update_event(f"Update backup failed: label={label} error={exc}")
         return {"ok": False, "message": "업데이트 백업 생성 실패", "detail": str(exc)}
 
+    log_update_event(f"Update backup created: label={label} path={backup_path} files={file_count}")
     return {
         "ok": True,
         "path": backup_path,
@@ -3837,6 +4007,7 @@ echo "Rollback restore completed: $TARGET"
 
 def _launch_windows_setup_update(installer_path: str) -> dict:
     """Windows 설치형 업데이트: Setup EXE를 실행한다."""
+    log_update_event(f"Windows setup update requested: {installer_path}")
     backup = _create_update_backup(PROJECT_DIR, "windows_setup")
     if not backup.get("ok"):
         return backup
@@ -3847,7 +4018,9 @@ def _launch_windows_setup_update(installer_path: str) -> dict:
     try:
         subprocess.Popen([installer_path], cwd=os.path.dirname(installer_path))
     except OSError as exc:
+        log_update_event(f"Windows setup launch failed: {exc}")
         return {"ok": False, "message": "설치 파일 실행 실패", "detail": str(exc)}
+    log_update_event(f"Windows setup launched: backup={backup.get('path')} restore={restore.get('path')}")
     return {
         "ok": True,
         "message": "설치 프로그램을 실행했습니다.",
@@ -3862,7 +4035,9 @@ def _launch_windows_setup_update(installer_path: str) -> dict:
 
 def _launch_windows_portable_update(zip_path: str) -> dict:
     """Windows portable 업데이트: 앱 종료 후 PowerShell helper가 현재 폴더를 덮어쓴다."""
+    log_update_event(f"Windows portable update requested: {zip_path}")
     if not zipfile.is_zipfile(zip_path):
+        log_update_event("Windows portable update rejected: invalid zip")
         return {"ok": False, "message": "다운로드한 ZIP 파일이 올바르지 않습니다."}
 
     backup = _create_update_backup(PROJECT_DIR, "windows_portable")
@@ -3930,7 +4105,11 @@ if (Test-Path -LiteralPath $launcher) {{
             "-File", helper,
         ])
     except OSError as exc:
+        log_update_event(f"Windows portable helper launch failed: {exc}")
         return {"ok": False, "message": "포터블 업데이트 스크립트 실행 실패", "detail": str(exc)}
+    log_update_event(
+        f"Windows portable helper launched: helper={helper} backup={backup.get('path')} restore={restore.get('path')}"
+    )
     return {
         "ok": True,
         "message": "포터블 업데이트를 시작했습니다.",
@@ -3947,6 +4126,7 @@ if (Test-Path -LiteralPath $launcher) {{
 
 def _launch_linux_deb_update(deb_path: str) -> dict:
     """Raspberry Pi/Linux 업데이트: deb 설치 명령을 터미널에서 실행한다."""
+    log_update_event(f"Linux deb update requested: {deb_path}")
     backup = _create_update_backup(PROJECT_DIR, "linux_deb")
     if not backup.get("ok"):
         return backup
@@ -3971,6 +4151,7 @@ def _launch_linux_deb_update(deb_path: str) -> dict:
     try:
         if hasattr(os, "geteuid") and os.geteuid() == 0:
             subprocess.Popen(["sh", "-c", f"apt install -y {_quote_sh(deb_path)} || sh {_quote_sh(str(restore.get('path')))}"])
+            log_update_event(f"Linux deb install launched as root: backup={backup.get('path')}")
             return {
                 "ok": True,
                 "message": "deb 업데이트 설치를 시작했습니다.",
@@ -3984,6 +4165,7 @@ def _launch_linux_deb_update(deb_path: str) -> dict:
         for exe, args in terminals:
             if shutil.which(exe):
                 subprocess.Popen(args)
+                log_update_event(f"Linux deb install launched in terminal={exe}: backup={backup.get('path')}")
                 return {
                     "ok": True,
                     "message": "터미널에서 deb 업데이트 설치를 시작했습니다.",
@@ -3996,8 +4178,10 @@ def _launch_linux_deb_update(deb_path: str) -> dict:
                     "exit_app": True,
                 }
     except OSError as exc:
+        log_update_event(f"Linux deb install launch failed: {exc}")
         return {"ok": False, "message": "deb 설치 명령 실행 실패", "detail": str(exc)}
 
+    log_update_event("Linux deb install launch failed: no terminal found")
     return {
         "ok": False,
         "message": "터미널을 찾지 못했습니다.",
@@ -4014,9 +4198,13 @@ def _apply_release_update(release_info: dict) -> dict:
     """선택된 릴리스 자산을 내려받아 현재 환경에 맞게 적용을 시작한다."""
     asset = release_info.get("asset")
     if not asset:
+        log_update_event("Apply update failed: no matching asset")
         return {"ok": False, "message": "현재 환경에 맞는 업데이트 파일을 찾지 못했습니다."}
 
     channel = str(release_info.get("channel") or _detect_update_channel())
+    log_update_event(
+        f"Apply update start: channel={channel} version={release_info.get('latest') or release_info.get('latest_version')}"
+    )
     target_dir = os.path.join(tempfile.gettempdir(), "bean_brew_cafe_kiosk_updates")
     download = _download_asset(asset, target_dir)
     if not download.get("ok"):
@@ -4416,6 +4604,204 @@ def show_update_popup(root: tk.Tk) -> None:
         "Windows 설치형은 Setup EXE, 포터블은 ZIP, Raspberry Pi는 deb 파일을 사용합니다.\n"
         "다운로드 후 SHA256 검증을 통과해야 업데이트를 시작합니다."
     )
+
+
+def _tail_text_file(path: str, max_chars: int = 30000) -> str:
+    """로그 파일 끝부분을 읽어 진단 텍스트에 넣는다."""
+    try:
+        with open(path, "rb") as fp:
+            fp.seek(0, os.SEEK_END)
+            size = fp.tell()
+            fp.seek(max(0, size - max_chars))
+            data = fp.read()
+        return data.decode("utf-8", errors="replace").strip()
+    except OSError:
+        return "(파일 없음)"
+
+
+def _safe_settings_snapshot() -> str:
+    """민감한 인증키 내용은 제외하고 설정 요약만 반환한다."""
+    try:
+        settings = dict(_app_settings)
+    except Exception:
+        settings = {}
+    redacted: dict[str, object] = {}
+    for key, value in settings.items():
+        lower = str(key).lower()
+        if any(token in lower for token in ("credential", "private", "token", "key", "secret")):
+            redacted[key] = "(숨김)"
+        else:
+            redacted[key] = value
+    try:
+        return json.dumps(redacted, ensure_ascii=False, indent=2)
+    except Exception:
+        return str(redacted)
+
+
+def collect_diagnostic_log_text() -> str:
+    """사용자가 개발자에게 보낼 수 있는 텍스트 진단 보고서를 만든다."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    credential_path = _existing_dialogflow_credential_path()
+    sections = [
+        "BEAN & BREW Cafe Kiosk Diagnostic Log",
+        "=" * 48,
+        f"Generated: {now}",
+        f"App version: {_safe_read_version_file()}",
+        f"OS: {platform.system()} {platform.release()} ({platform.version()})",
+        f"Python: {sys.version.replace(chr(10), ' ')}",
+        f"Executable: {sys.executable}",
+        f"Working directory: {os.getcwd()}",
+        f"Project directory: {PROJECT_DIR}",
+        f"App directory: {APP_DIR}",
+        f"Config directory: {_user_config_dir()}",
+        f"Log directory: {LOG_DIR}",
+        f"Raspberry Pi detected: {IS_RPI}",
+        f"Dialogflow package available: {DIALOGFLOW_PACKAGE_AVAILABLE}",
+        f"Dialogflow credential file: {'있음' if credential_path else '없음'}",
+        f"Dialogflow project: {DIALOGFLOW_PROJECT_ID}",
+        "",
+        "[Settings Snapshot]",
+        _safe_settings_snapshot(),
+        "",
+        f"[{os.path.basename(APP_LOG_PATH)} tail]",
+        _tail_text_file(APP_LOG_PATH),
+        "",
+        f"[{os.path.basename(ERROR_LOG_PATH)} tail]",
+        _tail_text_file(ERROR_LOG_PATH),
+        "",
+        f"[{os.path.basename(SPEECH_LOG_PATH)} tail]",
+        _tail_text_file(SPEECH_LOG_PATH),
+        "",
+        f"[{os.path.basename(UPDATE_LOG_PATH)} tail]",
+        _tail_text_file(UPDATE_LOG_PATH),
+        "",
+    ]
+    return "\n".join(sections)
+
+
+def export_diagnostic_log_text(parent: "tk.Misc | None" = None) -> str | None:
+    """진단 로그 텍스트를 사용자가 선택한 위치에 저장한다."""
+    default_name = f"cafe_kiosk_diagnostic_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    path = filedialog.asksaveasfilename(
+        parent=parent,
+        title="진단 로그 저장 위치 선택",
+        defaultextension=".txt",
+        initialfile=default_name,
+        filetypes=[("텍스트 파일", "*.txt"), ("모든 파일", "*.*")],
+    )
+    if not path:
+        return None
+
+    try:
+        with open(path, "w", encoding="utf-8") as fp:
+            fp.write(collect_diagnostic_log_text())
+        log_app_event(f"Diagnostic log exported: {path}")
+        messagebox.showinfo("오류 로그 저장", f"진단 로그를 저장했습니다.\n\n{path}", parent=parent)
+        return path
+    except OSError as exc:
+        log_error_event(f"Diagnostic log export failed: {exc}")
+        messagebox.showerror("오류 로그 저장", f"진단 로그를 저장하지 못했습니다.\n\n{exc}", parent=parent)
+        return None
+
+
+def open_log_folder(parent: "tk.Misc | None" = None) -> None:
+    """로그 폴더를 파일 탐색기/파일 관리자에서 연다."""
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        if IS_WINDOWS:
+            os.startfile(LOG_DIR)  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", LOG_DIR])
+        else:
+            subprocess.Popen(["xdg-open", LOG_DIR])
+        log_app_event(f"Opened log folder: {LOG_DIR}")
+    except Exception as exc:
+        log_error_event(f"Open log folder failed: {exc}")
+        messagebox.showwarning("오류 로그", f"로그 폴더를 열지 못했습니다.\n\n{LOG_DIR}", parent=parent)
+
+
+def show_error_log_popup(root: tk.Tk) -> None:
+    """오류 로그 확인 및 진단 텍스트 저장 팝업."""
+    existing = _existing_popup(show_error_log_popup)
+    if existing is not None:
+        _safe_lift(existing, root)
+        return
+
+    owner = _popup_owner(root)
+    popup = tk.Toplevel(owner)
+    popup.title("오류 로그")
+    popup.resizable(True, True)
+    popup.configure(bg="#102033")
+    _setup_modal_popup(popup, owner)
+
+    pw = min(720, owner.winfo_screenwidth() - 40)
+    ph = min(620, owner.winfo_screenheight() - 30)
+    _center_popup_on_owner(popup, owner, pw, ph)
+    show_error_log_popup._popup = popup
+
+    outer = tk.Frame(popup, bg="#102033", padx=_px(16), pady=_px(14))
+    outer.pack(fill="both", expand=True)
+    outer.grid_columnconfigure(0, weight=1)
+    outer.grid_rowconfigure(1, weight=1)
+
+    tk.Label(outer, text="오류 로그",
+             font=(FONT_UI, _fs(18), "bold"),
+             bg="#102033", fg="#ffffff").grid(row=0, column=0, sticky="w", pady=(0, _px(10)))
+
+    body = tk.Text(outer, width=78, height=18,
+                   font=(FONT_MONO, _fs(9)),
+                   bg="#0d1b2a", fg="#eaeaea",
+                   relief="flat", bd=0, padx=_px(10), pady=_px(10),
+                   wrap="word")
+    body.grid(row=1, column=0, sticky="nsew")
+
+    scroll = tk.Scrollbar(outer, orient="vertical", command=body.yview)
+    scroll.grid(row=1, column=1, sticky="ns")
+    body.configure(yscrollcommand=scroll.set)
+
+    def _refresh() -> None:
+        body.configure(state="normal")
+        body.delete("1.0", "end")
+        body.insert("end", collect_diagnostic_log_text())
+        body.configure(state="disabled")
+        body.see("1.0")
+
+    button_row = tk.Frame(outer, bg="#102033")
+    button_row.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(_px(12), 0))
+    for col in range(4):
+        button_row.columnconfigure(col, weight=1)
+
+    tk.Button(button_row, text="새로고침",
+              font=(FONT_UI, _fs(10), "bold"),
+              bg="#2563eb", fg="white",
+              activebackground="#1d4ed8", activeforeground="white",
+              relief="flat", padx=_px(10), pady=_px(7), cursor="hand2",
+              command=_refresh).grid(row=0, column=0, sticky="ew", padx=(0, _px(4)))
+
+    tk.Button(button_row, text="텍스트 저장",
+              font=(FONT_UI, _fs(10), "bold"),
+              bg="#16a34a", fg="white",
+              activebackground="#15803d", activeforeground="white",
+              relief="flat", padx=_px(10), pady=_px(7), cursor="hand2",
+              command=lambda: export_diagnostic_log_text(popup)
+              ).grid(row=0, column=1, sticky="ew", padx=(_px(4), _px(4)))
+
+    tk.Button(button_row, text="로그 폴더",
+              font=(FONT_UI, _fs(10), "bold"),
+              bg="#7c3aed", fg="white",
+              activebackground="#5b21b6", activeforeground="white",
+              relief="flat", padx=_px(10), pady=_px(7), cursor="hand2",
+              command=lambda: open_log_folder(popup)
+              ).grid(row=0, column=2, sticky="ew", padx=(_px(4), _px(4)))
+
+    tk.Button(button_row, text="닫기",
+              font=(FONT_UI, _fs(10), "bold"),
+              bg="#e94560", fg="white",
+              activebackground="#c73652", activeforeground="white",
+              relief="flat", padx=_px(10), pady=_px(7), cursor="hand2",
+              command=popup.destroy).grid(row=0, column=3, sticky="ew", padx=(_px(4), 0))
+
+    _refresh()
 
 
 def show_admin_stats_popup(root: tk.Tk) -> None:
@@ -5909,6 +6295,27 @@ class CafeKioskApp:
                   activebackground="#0d47a1", activeforeground="white",
                   relief="flat", padx=_px(8), pady=_px(5), cursor="hand2",
                   command=lambda: show_admin_stats_popup(win)
+                  ).grid(row=0, column=1, sticky="ew", padx=(_px(4), 0))
+
+        log_row = tk.Frame(outer, bg=SETTINGS_BG)
+        log_row.pack(fill="x", pady=(0, _px(10)))
+        log_row.columnconfigure(0, weight=1)
+        log_row.columnconfigure(1, weight=1)
+
+        tk.Button(log_row, text="오류 로그",
+                  font=(FONT_UI, _fs(10), "bold"),
+                  bg="#334155", fg="white",
+                  activebackground="#1e293b", activeforeground="white",
+                  relief="flat", padx=_px(8), pady=_px(5), cursor="hand2",
+                  command=lambda: show_error_log_popup(win)
+                  ).grid(row=0, column=0, sticky="ew", padx=(0, _px(4)))
+
+        tk.Button(log_row, text="진단 저장",
+                  font=(FONT_UI, _fs(10), "bold"),
+                  bg="#0891b2", fg="white",
+                  activebackground="#0e7490", activeforeground="white",
+                  relief="flat", padx=_px(8), pady=_px(5), cursor="hand2",
+                  command=lambda: export_diagnostic_log_text(win)
                   ).grid(row=0, column=1, sticky="ew", padx=(_px(4), 0))
 
         update_frame = tk.Frame(outer, bg=SETTINGS_BG)
@@ -8559,6 +8966,19 @@ def main() -> None:
     root.title("BEAN & BREW - 음성 + 터치 주문")
     root.configure(bg="#1a1a2e")
     root.resizable(True, True)
+
+    def _tk_callback_exception(exc_type, exc, tb) -> None:
+        log_error_event("Tkinter callback exception", exc_info=(exc_type, exc, tb))
+        try:
+            messagebox.showwarning(
+                "오류 로그",
+                "처리 중 오류가 발생했습니다.\n설정의 오류 로그에서 내용을 확인할 수 있습니다.",
+                parent=root,
+            )
+        except Exception:
+            pass
+
+    root.report_callback_exception = _tk_callback_exception
 
     # ── 화면 크기 측정 ───────────────────────────────────
     root.update_idletasks()

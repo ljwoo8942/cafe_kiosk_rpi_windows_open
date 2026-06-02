@@ -17,18 +17,18 @@ Raspberry Pi에서는 `xrandr`로 연결된 모니터 크기와 위치를 감지
 
 최신 설치 파일은 GitHub Releases에서 받을 수 있습니다. 일반 사용자는 아래 파일만 다운로드하면 됩니다.
 
-- Windows: [CafeKiosk-Windows-Setup-1.0.10.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.10/CafeKiosk-Windows-Setup-1.0.10.exe)
-- Raspberry Pi / Linux: [cafe-kiosk-rpi_1.0.10_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.10/cafe-kiosk-rpi_1.0.10_all.deb)
-- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.0.10.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.10/CafeKiosk-Windows-Portable-1.0.10.zip)
+- Windows: [CafeKiosk-Windows-Setup-1.0.11.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.11/CafeKiosk-Windows-Setup-1.0.11.exe)
+- Raspberry Pi / Linux: [cafe-kiosk-rpi_1.0.11_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.11/cafe-kiosk-rpi_1.0.11_all.deb)
+- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.0.11.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.0.11/CafeKiosk-Windows-Portable-1.0.11.zip)
 
 릴리즈 페이지:
-[Cafe Kiosk v1.0.10](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.0.10)
+[Cafe Kiosk v1.0.11](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.0.11)
 
 ## 설치 방법
 
 Windows:
 
-1. `CafeKiosk-Windows-Setup-1.0.10.exe`를 다운로드합니다.
+1. `CafeKiosk-Windows-Setup-1.0.11.exe`를 다운로드합니다.
 2. 설치 파일을 실행합니다.
 3. 설치가 끝나면 바탕화면의 `BEAN & BREW Cafe Kiosk` 바로가기로 실행합니다.
 
@@ -38,11 +38,11 @@ Windows에서 SmartScreen 경고가 표시될 수 있습니다. 개인 개발자
 
 Raspberry Pi / Linux:
 
-1. `cafe-kiosk-rpi_1.0.10_all.deb`를 다운로드합니다.
+1. `cafe-kiosk-rpi_1.0.11_all.deb`를 다운로드합니다.
 2. 파일이 있는 폴더에서 아래 명령을 실행합니다.
 
 ```bash
-sudo apt install ./cafe-kiosk-rpi_1.0.10_all.deb
+sudo apt install ./cafe-kiosk-rpi_1.0.11_all.deb
 cafe-kiosk
 ```
 
@@ -66,6 +66,7 @@ cafe-kiosk
 - Windows / Raspberry Pi 환경별 TTS 및 오디오 폴백 처리
 - 실행 중 자동 업데이트 확인 및 설정 버튼 업데이트 강조
 - 업데이트 파일 SHA256 검증, 적용 전 백업, 실패 시 복구 스크립트 제공
+- 오류 로그 확인 및 개발자 전달용 진단 텍스트 파일 저장
 
 ## 주문 흐름
 
@@ -117,6 +118,12 @@ Edge TTS는 반복 안내 문구를 캐시하여 다음 실행 후에도 빠르�
 업데이트 파일은 다운로드 후 GitHub Release의 SHA256 검증값과 비교합니다. 검증값이 없거나 파일이 손상된 경우 업데이트를 중단합니다.
 
 업데이트를 적용하기 전 현재 프로그램 파일을 임시 폴더에 백업합니다. Windows 무설치 버전은 파일 교체 실패 시 자동 복구를 시도하고, Windows 설치형과 Raspberry Pi/Linux 버전은 백업 파일과 복구 스크립트 경로를 안내합니다. 주문 이력, 설정, TTS 캐시 같은 개인 실행 데이터는 백업 대상에서 제외해 사용 중인 로컬 데이터가 덮어써지지 않도록 했습니다.
+
+## 오류 로그와 진단 파일
+
+프로그램은 실행 중 발생하는 앱 로그, 오류 로그, 음성 인식 로그, 업데이트 로그를 자동으로 저장합니다. 기본 저장 위치는 Windows의 경우 `%APPDATA%\BEAN_BREW_Cafe_Kiosk\logs\`, Raspberry Pi/Linux의 경우 `~/.config/bean_brew_cafe_kiosk/logs/`입니다. 권한 문제로 해당 위치를 사용할 수 없으면 프로그램 폴더의 `logs/`로 자동 폴백합니다.
+
+설정 팝업의 `오류 로그` 버튼을 누르면 현재 진단 내용을 바로 확인할 수 있습니다. `진단 저장` 또는 오류 로그 팝업의 `텍스트 저장` 버튼을 누르면 사용자가 원하는 위치를 선택해 개발자에게 보낼 수 있는 `.txt` 파일로 저장할 수 있습니다. Dialogflow 인증키, 개인 토큰 같은 민감한 값은 진단 파일에 직접 기록하지 않습니다.
 
 ## 프로젝트 구조
 
