@@ -4164,7 +4164,16 @@ try {{
     }}
     New-Item -ItemType Directory -Force -Path $extract | Out-Null
     Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
-    Get-ChildItem -LiteralPath $extract -Force | Copy-Item -Destination $target -Recurse -Force
+    $source = $extract
+    $topItems = @(Get-ChildItem -LiteralPath $extract -Force)
+    if ($topItems.Count -eq 1 -and $topItems[0].PSIsContainer) {{
+        $candidate = $topItems[0].FullName
+        if ((Test-Path -LiteralPath (Join-Path $candidate 'run_windows.cmd')) -and
+            (Test-Path -LiteralPath (Join-Path $candidate 'cafe_kiosk'))) {{
+            $source = $candidate
+        }}
+    }}
+    Get-ChildItem -LiteralPath $source -Force | Copy-Item -Destination $target -Recurse -Force
     "Portable update completed: $(Get-Date)" | Out-File -FilePath $log -Encoding UTF8
 }} catch {{
     "Portable update failed: $($_.Exception.Message)" | Out-File -FilePath $log -Encoding UTF8
@@ -4231,7 +4240,7 @@ def _launch_linux_deb_update(deb_path: str) -> dict:
         "echo '업데이트 설치가 완료되었습니다.'; "
         "else "
         "echo '업데이트 설치가 실패하여 백업 복구를 시도합니다.'; "
-        f"sh {_quote_sh(str(restore.get('path')))}; "
+        f"sudo sh {_quote_sh(str(restore.get('path')))}; "
         "fi; echo; read -p 'Enter를 누르면 닫습니다.'"
     )
     terminals = [
@@ -4279,7 +4288,7 @@ def _launch_linux_deb_update(deb_path: str) -> dict:
         "message": "터미널을 찾지 못했습니다.",
         "detail": (
             "아래 명령을 직접 실행해 주세요.\n"
-            f"sudo apt install -y {_quote_sh(deb_path)} || sh {_quote_sh(str(restore.get('path')))}\n"
+            f"sudo apt install -y {_quote_sh(deb_path)} || sudo sh {_quote_sh(str(restore.get('path')))}\n"
             f"백업 파일: {backup.get('path')}\n"
             f"복구 스크립트: {restore.get('path')}"
         ),
