@@ -10,6 +10,12 @@ VENV_DIR="$ROOT_DIR/.venv-rpi"
 REQ_FILE="$ROOT_DIR/requirements-rpi.txt"
 MAIN_FILE="$ROOT_DIR/cafe_kiosk/cafe_kiosk_final.py"
 RUNNER="$ROOT_DIR/run_raspberry_pi.sh"
+INSTALL_LOG_DIR="$ROOT_DIR/install_logs"
+INSTALL_LOG_FILE="$INSTALL_LOG_DIR/rpi_install_$(date +%Y%m%d_%H%M%S).txt"
+
+mkdir -p "$INSTALL_LOG_DIR"
+exec > >(tee -a "$INSTALL_LOG_FILE") 2>&1
+trap 'echo; echo "설치가 실패했습니다. 설치 진단 로그를 개발자에게 보내 주세요: $INSTALL_LOG_FILE" >&2' ERR
 
 APT_PACKAGES=(
   python3-tk
@@ -41,6 +47,35 @@ OPTIONAL_APT_PACKAGES=(
 
 step() {
   printf '\n==> %s\n' "$1"
+}
+
+check_item() {
+  local label="$1"
+  shift
+  if "$@" >/dev/null 2>&1; then
+    printf '  [OK] %s\n' "$label"
+  else
+    printf '  [확인 필요] %s\n' "$label"
+  fi
+}
+
+run_post_install_checks() {
+  step "설치 후 점검"
+  check_item "Python 가상환경" test -x "$PYTHON"
+  check_item "tkinter GUI" "$PYTHON" -c "import tkinter"
+  check_item "Pillow/ImageTk" "$PYTHON" -c "from PIL import Image, ImageTk"
+  check_item "SpeechRecognition" "$PYTHON" -c "import speech_recognition"
+  check_item "PyAudio" "$PYTHON" -c "import pyaudio"
+  check_item "Dialogflow 패키지" "$PYTHON" -c "import google.cloud.dialogflow_v2"
+  check_item "xrandr 화면 감지" xrandr --listmonitors
+  check_item "스피커 장치(aplay)" aplay -l
+  check_item "마이크 장치(arecord)" arecord -l
+  check_item "mpg123 Edge TTS 재생기" command -v mpg123
+  check_item "espeak-ng TTS" command -v espeak-ng
+  if [[ "${CAFE_KIOSK_SKIP_AUDIO_TEST:-0}" != "1" ]] && command -v espeak-ng >/dev/null 2>&1; then
+    espeak-ng -v ko "테스트" >/dev/null 2>&1 || true
+  fi
+  echo "설치/점검 로그: $INSTALL_LOG_FILE"
 }
 
 if [[ ! -f "$MAIN_FILE" ]]; then
@@ -120,6 +155,8 @@ if [[ "${CAFE_KIOSK_AUTOSTART:-0}" == "1" ]]; then
   cp "$DESKTOP_FILE" "$HOME/.config/autostart/bean-brew-cafe-kiosk.desktop"
 fi
 
+run_post_install_checks
+
 step "설치 완료"
 echo "실행 방법:"
 echo "  bash run_raspberry_pi.sh"
@@ -128,3 +165,4 @@ echo "부팅 시 자동 실행까지 등록하려면 다음처럼 실행하세�
 echo "  CAFE_KIOSK_AUTOSTART=1 bash install_raspberry_pi.sh"
 echo ""
 echo "설정 창의 업데이트 버튼은 Git이 설치되어 있고 이 폴더가 Git 저장소일 때 동작합니다."
+echo "설치 로그: $INSTALL_LOG_FILE"

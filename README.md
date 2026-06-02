@@ -17,18 +17,18 @@ Raspberry Pi에서는 `xrandr`로 연결된 모니터 크기와 위치를 감지
 
 최신 설치 파일은 GitHub Releases에서 받을 수 있습니다. 일반 사용자는 아래 파일만 다운로드하면 됩니다.
 
-- Windows: [CafeKiosk-Windows-Setup-1.1.2.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.2/CafeKiosk-Windows-Setup-1.1.2.exe)
-- Raspberry Pi / Linux: [cafe-kiosk-rpi_1.1.2_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.2/cafe-kiosk-rpi_1.1.2_all.deb)
-- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.1.2.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.2/CafeKiosk-Windows-Portable-1.1.2.zip)
+- Windows: [CafeKiosk-Windows-Setup-1.1.3.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.3/CafeKiosk-Windows-Setup-1.1.3.exe)
+- Raspberry Pi / Linux: [cafe-kiosk-rpi_1.1.3_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.3/cafe-kiosk-rpi_1.1.3_all.deb)
+- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.1.3.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.3/CafeKiosk-Windows-Portable-1.1.3.zip)
 
 릴리즈 페이지:
-[Cafe Kiosk v1.1.2](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.1.2)
+[Cafe Kiosk v1.1.3](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.1.3)
 
 ## 설치 방법
 
 Windows:
 
-1. `CafeKiosk-Windows-Setup-1.1.2.exe`를 다운로드합니다.
+1. `CafeKiosk-Windows-Setup-1.1.3.exe`를 다운로드합니다.
 2. 설치 파일을 실행합니다.
 3. 설치가 끝나면 바탕화면의 `BEAN & BREW Cafe Kiosk` 바로가기로 실행합니다.
 
@@ -38,11 +38,11 @@ Windows에서 SmartScreen 경고가 표시될 수 있습니다. 개인 개발자
 
 Raspberry Pi / Linux:
 
-1. `cafe-kiosk-rpi_1.1.2_all.deb`를 다운로드합니다.
+1. `cafe-kiosk-rpi_1.1.3_all.deb`를 다운로드합니다.
 2. 파일이 있는 폴더에서 아래 명령을 실행합니다.
 
 ```bash
-sudo apt install ./cafe-kiosk-rpi_1.1.2_all.deb
+sudo apt install ./cafe-kiosk-rpi_1.1.3_all.deb
 cafe-kiosk
 ```
 
@@ -111,6 +111,8 @@ TTS는 설정에서 엔진을 선택할 수 있습니다.
 
 Edge TTS는 반복 안내 문구를 캐시하여 다음 실행 후에도 빠르게 재생할 수 있도록 구성되어 있습니다. 볼륨, 속도, 피치, TTS 엔진, TTS 음성, 마이크 선택은 프로그램 설정으로 저장되어 다음 실행 시 다시 불러옵니다.
 
+처음 실행하면 초기 설정 마법사가 표시됩니다. 여기에서 TTS 테스트, 마이크 소음 보정, 시스템 점검, Dialogflow 인증 파일 등록을 진행할 수 있습니다. Dialogflow 인증 파일은 선택 사항이며, 첫 실행에서 건너뛰어도 설정 팝업의 `Dialogflow 등록` 버튼으로 나중에 언제든 등록할 수 있습니다.
+
 ## 업데이트와 복구
 
 프로그램 시작 시 GitHub Releases의 최신 버전을 확인합니다. 새 버전이 있으면 설정 버튼 테두리가 강조되며, 설정 팝업의 업데이트 버튼에서 설치를 진행할 수 있습니다.
@@ -124,6 +126,10 @@ Edge TTS는 반복 안내 문구를 캐시하여 다음 실행 후에도 빠르�
 프로그램은 실행 중 발생하는 앱 로그, 오류 로그, 음성 인식 로그, 업데이트 로그를 자동으로 저장합니다. 기본 저장 위치는 Windows의 경우 `%APPDATA%\BEAN_BREW_Cafe_Kiosk\logs\`, Raspberry Pi/Linux의 경우 `~/.config/bean_brew_cafe_kiosk/logs/`입니다. 권한 문제로 해당 위치를 사용할 수 없으면 프로그램 폴더의 `logs/`로 자동 폴백합니다.
 
 설정 팝업의 `오류 로그` 버튼을 누르면 현재 진단 내용을 바로 확인할 수 있습니다. `진단 저장` 또는 오류 로그 팝업의 `텍스트 저장` 버튼을 누르면 사용자가 원하는 위치를 선택해 개발자에게 보낼 수 있는 `.txt` 파일로 저장할 수 있습니다. Dialogflow 인증키, 개인 토큰 같은 민감한 값은 진단 파일에 직접 기록하지 않습니다.
+
+설치 스크립트도 설치 로그를 자동 저장합니다. Windows는 설치 폴더의 `install_logs/`, Raspberry Pi/Linux 직접 설치는 실행 폴더의 `install_logs/`, deb 패키지 설치는 `/var/log/bean-brew-cafe-kiosk-install.log`에 설치 및 점검 결과를 남깁니다.
+
+주문 이력 DB와 사용자 설정은 설치 폴더가 아닌 사용자 설정 폴더에 저장됩니다. Windows는 `%APPDATA%\BEAN_BREW_Cafe_Kiosk\`, Raspberry Pi/Linux는 `~/.config/bean_brew_cafe_kiosk/`를 사용하므로 `/opt/cafe-kiosk`에 설치해도 일반 사용자 권한으로 정상 저장됩니다.
 
 ## 프로젝트 구조
 

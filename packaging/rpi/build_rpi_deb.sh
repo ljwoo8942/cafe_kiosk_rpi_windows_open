@@ -113,6 +113,26 @@ if [ -x "$VENV_DIR/bin/python" ]; then
 fi
 
 chmod +x "$APP_DIR/install_raspberry_pi.sh" "$APP_DIR/run_raspberry_pi.sh" /usr/local/bin/cafe-kiosk
+LOG_FILE="/var/log/bean-brew-cafe-kiosk-install.log"
+{
+    echo "== BEAN & BREW Cafe Kiosk post-install check =="
+    date
+    echo "APP_DIR=$APP_DIR"
+    if [ -x "$VENV_DIR/bin/python" ]; then
+        "$VENV_DIR/bin/python" -c "import sys; print('Python', sys.version)" || true
+        "$VENV_DIR/bin/python" -c "import tkinter; print('tkinter OK')" || true
+        "$VENV_DIR/bin/python" -c "from PIL import Image, ImageTk; print('Pillow/ImageTk OK')" || true
+        "$VENV_DIR/bin/python" -c "import speech_recognition; print('SpeechRecognition OK')" || true
+        "$VENV_DIR/bin/python" -c "import pyaudio; print('PyAudio OK')" || true
+        "$VENV_DIR/bin/python" -c "import google.cloud.dialogflow_v2; print('Dialogflow package OK')" || true
+    fi
+    command -v xrandr >/dev/null 2>&1 && xrandr --listmonitors || true
+    command -v aplay >/dev/null 2>&1 && aplay -l || true
+    command -v arecord >/dev/null 2>&1 && arecord -l || true
+    command -v mpg123 >/dev/null 2>&1 && echo "mpg123 OK" || true
+    command -v espeak-ng >/dev/null 2>&1 && echo "espeak-ng OK" || true
+} >> "$LOG_FILE" 2>&1 || true
+echo "BEAN & BREW Cafe Kiosk install log: $LOG_FILE"
 exit 0
 EOF_POSTINST
 

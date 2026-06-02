@@ -17,6 +17,42 @@ $Launcher = Join-Path $RepoRoot "run_windows.cmd"
 $PythonWingetId = "Python.Python.3.13"
 $MinPython = [version]"3.10.0"
 $MaxPythonExclusive = [version]"3.14.0"
+$InstallLogDir = Join-Path $RepoRoot "install_logs"
+$InstallLogPath = Join-Path $InstallLogDir ("windows_install_{0}.txt" -f (Get-Date -Format "yyyyMMdd_HHmmss"))
+$script:TranscriptStarted = $false
+
+New-Item -ItemType Directory -Force -Path $InstallLogDir | Out-Null
+try {
+    Start-Transcript -Path $InstallLogPath -Force | Out-Null
+    $script:TranscriptStarted = $true
+} catch {
+    Write-Host "Install transcript could not start: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+
+trap {
+    $err = $_
+    try {
+        Add-Content -LiteralPath $InstallLogPath -Encoding UTF8 -Value @(
+            "",
+            "=== INSTALL FAILURE ===",
+            "Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+            "Install path: $RepoRoot",
+            "PowerShell: $($PSVersionTable.PSVersion)",
+            "OS: $([System.Environment]::OSVersion.VersionString)",
+            "Error: $($err.Exception.Message)",
+            "Script: $($err.InvocationInfo.ScriptName)",
+            "Line: $($err.InvocationInfo.ScriptLineNumber)",
+            "Command: $($err.InvocationInfo.Line)"
+        )
+    } catch {}
+    if ($script:TranscriptStarted) {
+        try { Stop-Transcript | Out-Null } catch {}
+    }
+    Write-Host ""
+    Write-Host "설치가 실패했습니다. 아래 설치 진단 로그를 개발자에게 보내 주세요." -ForegroundColor Red
+    Write-Host "  $InstallLogPath" -ForegroundColor Yellow
+    exit 1
+}
 
 function Write-Step {
     param([string]$Message)
@@ -197,3 +233,7 @@ Write-Host "Run command:" -ForegroundColor Green
 Write-Host "  .\run_windows.cmd"
 Write-Host ""
 Write-Host "The settings window update button checks GitHub Releases and applies the latest installer."
+if ($script:TranscriptStarted) {
+    try { Stop-Transcript | Out-Null } catch {}
+}
+Write-Host "설치 로그: $InstallLogPath" -ForegroundColor Green

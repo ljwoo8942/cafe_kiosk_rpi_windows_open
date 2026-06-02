@@ -116,7 +116,8 @@ def _user_config_dir() -> str:
     return os.path.join(os.path.expanduser("~"), ".config", "bean_brew_cafe_kiosk")
 
 
-LOG_DIR = os.path.join(_user_config_dir(), "logs")
+USER_CONFIG_DIR = _user_config_dir()
+LOG_DIR = os.path.join(USER_CONFIG_DIR, "logs")
 APP_LOG_PATH = os.path.join(LOG_DIR, "app.log")
 ERROR_LOG_PATH = os.path.join(LOG_DIR, "error.log")
 SPEECH_LOG_PATH = os.path.join(LOG_DIR, "speech.log")
@@ -557,17 +558,20 @@ def _rpi_touch_monitor_pair(monitors: list[dict[str, int | str]]
 # 메인 스레드에서 초기화하면 runAndWait() 이후 두 번째 음성부터 무음이 되는 문제 발생
 tts_engine = None   # 워커 스레드 시작 후 해당 스레드 안에서 할당됨
 
-APP_SETTINGS_PATH = os.path.join(APP_DIR, "cafe_kiosk_settings.json")
+APP_SETTINGS_PATH = os.path.join(USER_CONFIG_DIR, "cafe_kiosk_settings.json")
+LEGACY_APP_SETTINGS_PATH = os.path.join(APP_DIR, "cafe_kiosk_settings.json")
 
 
 def _load_app_settings() -> dict:
     """프로그램 시작 시 사용자 설정 JSON을 읽어온다."""
     try:
-        if not os.path.isfile(APP_SETTINGS_PATH):
-            return {}
-        with open(APP_SETTINGS_PATH, "r", encoding="utf-8") as fp:
-            data = json.load(fp)
-        return data if isinstance(data, dict) else {}
+        for path in (APP_SETTINGS_PATH, LEGACY_APP_SETTINGS_PATH):
+            if not path or not os.path.isfile(path):
+                continue
+            with open(path, "r", encoding="utf-8") as fp:
+                data = json.load(fp)
+            return data if isinstance(data, dict) else {}
+        return {}
     except Exception as e:
         print(f"⚠️  설정 파일 읽기 실패: {e}")
         return {}
@@ -586,7 +590,9 @@ def _save_app_settings() -> None:
             "mic_name": _saved_mic_name,
             "mic_index": _saved_mic_index,
             "menu_discounts": _saved_menu_discounts,
+            "first_setup_done": _first_setup_done,
         }
+        os.makedirs(os.path.dirname(APP_SETTINGS_PATH), exist_ok=True)
         with open(APP_SETTINGS_PATH, "w", encoding="utf-8") as fp:
             json.dump(data, fp, ensure_ascii=False, indent=2)
     except Exception as e:
@@ -627,6 +633,16 @@ def _setting_dict(key: str) -> dict:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def _setting_bool(key: str, default: bool = False) -> bool:
+    """설정값을 안전하게 bool로 읽는다."""
+    value = _app_settings.get(key, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
 # 볼륨/속도/피치 슬라이더 변경값을 워커 스레드에 전달하기 위한 공유 변수
 _tts_volume: float = _setting_int("tts_volume", 100, 0, 100) / 100.0
 _tts_rate: int = _setting_int("tts_rate", 175, 80, 260)
@@ -637,6 +653,7 @@ _saved_tts_voice_name: str = _setting_str("tts_voice_name")
 _saved_mic_name: str = _setting_str("mic_name")
 _saved_mic_index: int | None = _setting_optional_int("mic_index")
 _saved_menu_discounts: dict = _setting_dict("menu_discounts")
+_first_setup_done: bool = _setting_bool("first_setup_done", False)
 
 TTS_AUTO_LABEL = "자동 선택 (한국어 우선)"
 TTS_ENGINE_AUTO = "자동 선택"
@@ -3482,11 +3499,25 @@ def _resolve_ambiguous_choice(text: str, choices: tuple[str, ...]) -> str | None
 #        ⑤ voice_logs    — 음성 인식 원문 로그
 # ══════════════════════════════════════════════════════
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cafe_kiosk.db")
+DB_PATH = os.path.join(USER_CONFIG_DIR, "cafe_kiosk.db")
+LEGACY_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cafe_kiosk.db")
+
+
+def _ensure_user_db_path() -> None:
+    """설치 폴더가 읽기 전용이어도 DB를 사용자 설정 폴더에 둘 수 있게 준비한다."""
+    try:
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+        if (not os.path.isfile(DB_PATH)
+                and os.path.isfile(LEGACY_DB_PATH)
+                and os.path.abspath(DB_PATH) != os.path.abspath(LEGACY_DB_PATH)):
+            shutil.copy2(LEGACY_DB_PATH, DB_PATH)
+    except OSError as exc:
+        log_error_event(f"DB path preparation failed: {exc}")
 
 
 def _db_conn() -> sqlite3.Connection:
     """호출할 때마다 새 연결을 반환한다 (멀티스레드 안전)."""
+    _ensure_user_db_path()
     conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.execute("PRAGMA busy_timeout=10000")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -4634,8 +4665,17 @@ def show_update_popup(root: tk.Tk) -> None:
     def _finish_apply(result: dict) -> None:
         state["can_apply"] = False
         _set_busy(False)
-        status_var.set(str(result.get("message", "업데이트 작업을 완료했습니다.")))
-        _write_log(str(result.get("detail", "")))
+        ok = bool(result.get("ok"))
+        status_text = str(result.get("message", "업데이트 작업을 완료했습니다."))
+        status_var.set(("업데이트 적용 시작 - " if ok else "업데이트 실패 - ") + status_text)
+        detail = str(result.get("detail", "")).strip()
+        result_log = (
+            f"상태: {'성공' if ok else '실패'}\n"
+            f"시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"메시지: {status_text}\n\n"
+            f"{detail if detail else '상세 로그가 없습니다.'}"
+        )
+        _write_log(result_log)
         if result.get("ok"):
             speak("업데이트를 시작했습니다.")
             messagebox.showinfo(
@@ -5747,12 +5787,15 @@ class CafeKioskApp:
         self._update_notice: dict | None = None
         self._payment_confirm_pending = False
         self._update_status_label = None
+        self._first_setup_window = None
+        self._runtime_check_window = None
 
         # ── UI 빌드 ────────────────────────────────────
         self._build_ui()
 
         # ── 시작 인사 (이벤트 루프 시작 직후 1회) ────────
         self.root.after(0, self._startup_greeting)
+        self.root.after(1800, self._show_first_setup_wizard_if_needed)
         self.root.after(3500, self._start_background_update_check)
 
     # ──────────────────────────────────────────────────
@@ -6486,6 +6529,27 @@ class CafeKioskApp:
                   command=lambda: export_diagnostic_log_text(win)
                   ).grid(row=0, column=1, sticky="ew", padx=(_px(4), 0))
 
+        setup_row = tk.Frame(outer, bg=SETTINGS_BG)
+        setup_row.pack(fill="x", pady=(0, _px(10)))
+        setup_row.columnconfigure(0, weight=1)
+        setup_row.columnconfigure(1, weight=1)
+
+        tk.Button(setup_row, text="초기 설정",
+                  font=(FONT_UI, _fs(10), "bold"),
+                  bg="#2563eb", fg="white",
+                  activebackground="#1d4ed8", activeforeground="white",
+                  relief="flat", padx=_px(8), pady=_px(5), cursor="hand2",
+                  command=self._show_first_setup_wizard
+                  ).grid(row=0, column=0, sticky="ew", padx=(0, _px(4)))
+
+        tk.Button(setup_row, text="시스템 점검",
+                  font=(FONT_UI, _fs(10), "bold"),
+                  bg="#0f766e", fg="white",
+                  activebackground="#115e59", activeforeground="white",
+                  relief="flat", padx=_px(8), pady=_px(5), cursor="hand2",
+                  command=lambda: self._show_runtime_diagnostics_popup(win)
+                  ).grid(row=0, column=1, sticky="ew", padx=(_px(4), 0))
+
         update_frame = tk.Frame(outer, bg=SETTINGS_BG)
         update_frame.pack(fill="x", pady=(0, _px(10)))
 
@@ -7101,9 +7165,9 @@ class CafeKioskApp:
             return "기본 마이크 사용 중"
         return f"{selected[:20]}..." if len(selected) > 20 else selected
 
-    def _register_dialogflow_file(self) -> None:
+    def _register_dialogflow_file(self, parent: "tk.Misc | None" = None) -> None:
         """설정창에서 Dialogflow 서비스 계정 JSON 파일을 선택해 등록한다."""
-        parent = self._settings_window if _widget_exists(self._settings_window) else self.root
+        parent = parent or (self._settings_window if _widget_exists(self._settings_window) else self.root)
         path = filedialog.askopenfilename(
             parent=parent,
             title="Dialogflow 서비스 계정 JSON 선택",
@@ -7116,7 +7180,8 @@ class CafeKioskApp:
             return
 
         ok, message = register_dialogflow_credential(path)
-        self._dialogflow_status_var.set(dialogflow_status_text())
+        if hasattr(self, "_dialogflow_status_var"):
+            self._dialogflow_status_var.set(dialogflow_status_text())
         self.log(f"\n[설정] Dialogflow 등록: {message}")
         if ok:
             messagebox.showinfo("Dialogflow 등록", message, parent=parent)
@@ -7124,6 +7189,231 @@ class CafeKioskApp:
         else:
             messagebox.showwarning("Dialogflow 등록", message, parent=parent)
             speak("Dialogflow 인증 파일을 적용하지 못했습니다.")
+
+    def _runtime_check_rows(self) -> list[tuple[str, str, bool]]:
+        """설치 후/첫 실행 점검에 보여줄 현재 환경 상태를 만든다."""
+        rows: list[tuple[str, str, bool]] = []
+        rows.append(("Python", sys.version.split()[0], True))
+        rows.append(("TTS 엔진", self._current_tts_engine_status_text(), True))
+        rows.append(("TTS 음성", self._current_tts_voice_status_text(), True))
+        rows.append(("마이크", self._current_mic_status_text(), self.microphone is not None))
+        rows.append(("Dialogflow", dialogflow_status_text(), bool(DIALOGFLOW_AVAILABLE)))
+        rows.append(("업데이트", self._settings_update_status_text(), True))
+
+        if IS_RPI:
+            monitors = _detect_xrandr_monitors()
+            if monitors:
+                summary = ", ".join(
+                    f"{m.get('name', '?')} {m.get('width', '?')}x{m.get('height', '?')}"
+                    for m in monitors[:3]
+                )
+                rows.append(("화면", summary, True))
+            else:
+                rows.append(("화면", "xrandr 모니터 정보를 읽지 못했습니다", False))
+            rows.append(("스피커", "aplay 감지됨" if shutil.which("aplay") else "aplay 없음", bool(shutil.which("aplay"))))
+            rows.append(("마이크 장치", "arecord 감지됨" if shutil.which("arecord") else "arecord 없음", bool(shutil.which("arecord"))))
+            rows.append(("Edge TTS 재생기", "mpg123 감지됨" if shutil.which("mpg123") else "mpg123 없음", bool(shutil.which("mpg123"))))
+            rows.append(("espeak-ng", "감지됨" if shutil.which("espeak-ng") else "없음", bool(shutil.which("espeak-ng"))))
+        else:
+            rows.append(("실행 환경", platform.system(), True))
+        return rows
+
+    def _show_runtime_diagnostics_popup(self, parent: "tk.Misc | None" = None) -> None:
+        """설치 후 점검과 동일한 관점의 런타임 진단 팝업을 표시한다."""
+        parent = parent or self.container.winfo_toplevel()
+        if _widget_exists(self._runtime_check_window):
+            _safe_lift(self._runtime_check_window, parent)
+            return
+
+        owner = _popup_owner(parent)
+        popup = tk.Toplevel(owner)
+        self._runtime_check_window = popup
+        popup.title("시스템 점검")
+        popup.configure(bg="#102033")
+        popup.resizable(False, False)
+        _setup_modal_popup(popup, owner)
+
+        owner.update_idletasks()
+        pw = min(max(380, _px(560)), owner.winfo_screenwidth() - 30)
+        ph = min(max(360, _px(500)), owner.winfo_screenheight() - 30)
+        _center_popup_on_owner(popup, owner, pw, ph)
+
+        def _close() -> None:
+            if _widget_exists(popup):
+                popup.destroy()
+            self._runtime_check_window = None
+
+        popup.protocol("WM_DELETE_WINDOW", _close)
+
+        outer = tk.Frame(popup, bg="#102033", padx=_px(16), pady=_px(14))
+        outer.pack(fill="both", expand=True)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(1, weight=1)
+
+        tk.Label(outer, text="시스템 점검",
+                 font=(FONT_UI, _fs(18), "bold"),
+                 bg="#102033", fg="#ffffff").grid(row=0, column=0, sticky="w", pady=(0, _px(10)))
+
+        text = tk.Text(outer, height=12, width=58,
+                       font=(FONT_UI, _fs(10)),
+                       bg="#0d1b2a", fg="#eaeaea",
+                       relief="flat", bd=0, padx=_px(10), pady=_px(10),
+                       wrap="word")
+        text.grid(row=1, column=0, sticky="nsew")
+
+        def _render() -> None:
+            text.config(state="normal")
+            text.delete("1.0", "end")
+            for label, detail, ok in self._runtime_check_rows():
+                mark = "OK" if ok else "확인 필요"
+                text.insert("end", f"[{mark}] {label}: {detail}\n")
+            text.insert("end", f"\n오류 로그 폴더: {LOG_DIR}\n")
+            text.config(state="disabled")
+
+        button_row = tk.Frame(outer, bg="#102033")
+        button_row.grid(row=2, column=0, sticky="ew", pady=(_px(12), 0))
+        button_row.columnconfigure(0, weight=1)
+        button_row.columnconfigure(1, weight=1)
+        button_row.columnconfigure(2, weight=1)
+
+        tk.Button(button_row, text="다시 점검",
+                  font=(FONT_UI, _fs(10), "bold"),
+                  bg="#2563eb", fg="white",
+                  activebackground="#1d4ed8", activeforeground="white",
+                  relief="flat", padx=_px(8), pady=_px(6), cursor="hand2",
+                  command=_render).grid(row=0, column=0, sticky="ew", padx=(0, _px(5)))
+        tk.Button(button_row, text="진단 저장",
+                  font=(FONT_UI, _fs(10), "bold"),
+                  bg="#0891b2", fg="white",
+                  activebackground="#0e7490", activeforeground="white",
+                  relief="flat", padx=_px(8), pady=_px(6), cursor="hand2",
+                  command=lambda: export_diagnostic_log_text(popup)).grid(row=0, column=1, sticky="ew", padx=_px(3))
+        tk.Button(button_row, text="닫기",
+                  font=(FONT_UI, _fs(10), "bold"),
+                  bg="#e94560", fg="white",
+                  activebackground="#c73652", activeforeground="white",
+                  relief="flat", padx=_px(8), pady=_px(6), cursor="hand2",
+                  command=_close).grid(row=0, column=2, sticky="ew", padx=(_px(5), 0))
+        _render()
+
+    def _mark_first_setup_done(self) -> None:
+        """첫 실행 마법사를 완료/건너뜀 처리한다."""
+        global _first_setup_done
+        _first_setup_done = True
+        _save_app_settings()
+
+    def _show_first_setup_wizard_if_needed(self) -> None:
+        """첫 실행 시 한 번만 초기 설정 마법사를 표시한다."""
+        if _first_setup_done:
+            return
+        if _widget_exists(self._first_setup_window):
+            return
+        self._show_first_setup_wizard()
+
+    def _show_first_setup_wizard(self) -> None:
+        """TTS, 마이크, Dialogflow, 시스템 점검을 한 화면에서 안내한다."""
+        parent = self.container.winfo_toplevel()
+        if _widget_exists(self._first_setup_window):
+            _safe_lift(self._first_setup_window, parent)
+            return
+        owner = _popup_owner(parent)
+        popup = tk.Toplevel(owner)
+        self._first_setup_window = popup
+        popup.title("초기 설정")
+        popup.configure(bg="#102033")
+        popup.resizable(False, False)
+        _setup_modal_popup(popup, owner)
+
+        owner.update_idletasks()
+        pw = min(max(390, _px(580)), owner.winfo_screenwidth() - 30)
+        ph = min(max(430, _px(540)), owner.winfo_screenheight() - 30)
+        _center_popup_on_owner(popup, owner, pw, ph)
+
+        dialogflow_var = tk.StringVar(value=dialogflow_status_text())
+        mic_var = tk.StringVar(value=self._current_mic_status_text())
+        tts_var = tk.StringVar(value=self._current_tts_engine_status_text())
+
+        def _close(mark_done: bool = True) -> None:
+            if mark_done:
+                self._mark_first_setup_done()
+            if _widget_exists(popup):
+                popup.destroy()
+            self._first_setup_window = None
+
+        def _open_settings() -> None:
+            _close(True)
+            self._toggle_settings(parent)
+
+        def _register_dialogflow_from_wizard() -> None:
+            self._register_dialogflow_file(popup)
+            dialogflow_var.set(dialogflow_status_text())
+
+        popup.protocol("WM_DELETE_WINDOW", lambda: _close(True))
+
+        outer = tk.Frame(popup, bg="#102033", padx=_px(16), pady=_px(14))
+        outer.pack(fill="both", expand=True)
+
+        tk.Label(outer, text="초기 설정",
+                 font=(FONT_UI, _fs(20), "bold"),
+                 bg="#102033", fg="#ffffff").pack(anchor="w")
+        tk.Label(outer,
+                 text="처음 실행에 필요한 음성, 마이크, Dialogflow, 시스템 상태를 확인합니다.",
+                 font=(FONT_UI, _fs(10)),
+                 bg="#102033", fg="#a0c4ff",
+                 wraplength=max(300, pw - _px(42)), justify="left").pack(anchor="w", pady=(_px(4), _px(12)))
+
+        status_box = tk.Frame(outer, bg="#0d1b2a", padx=_px(10), pady=_px(8))
+        status_box.pack(fill="x", pady=(0, _px(12)))
+        for title, var in [
+            ("TTS", tts_var),
+            ("마이크", mic_var),
+            ("Dialogflow", dialogflow_var),
+        ]:
+            row = tk.Frame(status_box, bg="#0d1b2a")
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=title,
+                     font=(FONT_UI, _fs(10), "bold"),
+                     bg="#0d1b2a", fg="#7ecfff", width=10, anchor="w").pack(side="left")
+            tk.Label(row, textvariable=var,
+                     font=(FONT_UI, _fs(9)),
+                     bg="#0d1b2a", fg="#eaeaea",
+                     anchor="w", justify="left",
+                     wraplength=max(230, pw - _px(170))).pack(side="left", fill="x", expand=True)
+
+        tk.Label(outer,
+                 text="Dialogflow 인증 파일은 선택 사항입니다. 지금 등록하지 않아도 설정에서 언제든 다시 등록할 수 있습니다.",
+                 font=(FONT_UI, _fs(9)),
+                 bg="#102033", fg="#ffd166",
+                 wraplength=max(300, pw - _px(42)), justify="left").pack(anchor="w", pady=(0, _px(10)))
+
+        grid = tk.Frame(outer, bg="#102033")
+        grid.pack(fill="x")
+        for col in range(2):
+            grid.columnconfigure(col, weight=1)
+
+        actions = [
+            ("TTS테스트", "#e94560", lambda: speak("테스트")),
+            ("소음 보정", "#0f766e", self._calibrate_ambient_noise),
+            ("Dialogflow 등록", "#4f46e5", _register_dialogflow_from_wizard),
+            ("시스템 점검", "#0891b2", lambda: self._show_runtime_diagnostics_popup(popup)),
+            ("설정 열기", "#2563eb", _open_settings),
+            ("나중에 하기", "#334155", lambda: _close(True)),
+        ]
+        for idx, (text, color, command) in enumerate(actions):
+            tk.Button(grid, text=text,
+                      font=(FONT_UI, _fs(10), "bold"),
+                      bg=color, fg="white",
+                      activebackground=color, activeforeground="white",
+                      relief="flat", padx=_px(8), pady=_px(7), cursor="hand2",
+                      command=command).grid(row=idx // 2, column=idx % 2,
+                                            sticky="ew", padx=_px(4), pady=_px(4))
+
+        tk.Button(outer, text="완료",
+                  font=(FONT_UI, _fs(12), "bold"),
+                  bg="#16a34a", fg="white",
+                  activebackground="#15803d", activeforeground="white",
+                  relief="flat", padx=_px(10), pady=_px(8), cursor="hand2",
+                  command=lambda: _close(True)).pack(fill="x", pady=(_px(12), 0))
 
     def _save_settings_debounced(self, delay_ms: int = 500) -> None:
         """슬라이더 드래그 중 설정 파일 저장을 짧게 모아서 1회만 수행한다."""
