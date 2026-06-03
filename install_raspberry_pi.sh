@@ -128,6 +128,9 @@ fi
 
 step "실행 파일 권한 설정"
 chmod +x "$RUNNER"
+if [[ -f "$ROOT_DIR/uninstall_raspberry_pi.sh" ]]; then
+  chmod +x "$ROOT_DIR/uninstall_raspberry_pi.sh"
+fi
 
 step "데스크톱 실행 아이콘 생성"
 mkdir -p "$HOME/.local/share/applications"
@@ -160,6 +163,9 @@ run_post_install_checks
 step "설치 완료"
 echo "실행 방법:"
 echo "  bash run_raspberry_pi.sh"
+echo ""
+echo "직접 설치 파일을 정리하려면 다음처럼 실행하세요:"
+echo "  bash uninstall_raspberry_pi.sh"
 echo ""
 echo "부팅 시 자동 실행까지 등록하려면 다음처럼 실행하세요:"
 echo "  CAFE_KIOSK_AUTOSTART=1 bash install_raspberry_pi.sh"

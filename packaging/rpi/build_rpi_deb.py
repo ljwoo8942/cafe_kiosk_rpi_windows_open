@@ -94,6 +94,24 @@ rm -f /usr/local/bin/cafe-kiosk
 exit 0
 """
 
+POSTRM_TEXT = """#!/bin/sh
+set -e
+
+APP_DIR="/opt/cafe-kiosk"
+
+rm -f /usr/local/bin/cafe-kiosk
+rm -f /var/log/bean-brew-cafe-kiosk-install.log
+rm -rf "$APP_DIR/.venv-rpi" "$APP_DIR/install_logs" "$APP_DIR/installer_logs" "$APP_DIR/logs"
+
+if [ -d "$APP_DIR" ]; then
+    find "$APP_DIR" -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
+    find "$APP_DIR" -type f \\( -name '*.pyc' -o -name '*.pyo' \\) -delete 2>/dev/null || true
+    find "$APP_DIR" -depth -type d -empty -delete 2>/dev/null || true
+fi
+
+exit 0
+"""
+
 LAUNCHER_TEXT = """#!/usr/bin/env bash
 exec /opt/cafe-kiosk/run_raspberry_pi.sh "$@"
 """
@@ -139,6 +157,12 @@ cafe-kiosk
 
 Dialogflow 인증 파일은 첫 실행 마법사에서 등록할 수 있으며,
 나중에 프로그램 설정 창에서도 다시 등록할 수 있습니다.
+
+삭제 방법:
+sudo apt remove cafe-kiosk-rpi
+
+주문 이력 DB와 사용자 설정까지 삭제하려면:
+rm -rf ~/.config/bean_brew_cafe_kiosk
 """
 
 EXCLUDED_DIRS = {"__pycache__", "tts_cache", ".vs", ".vscode"}
@@ -194,6 +218,7 @@ def make_control_tar() -> bytes:
         ("./control", CONTROL_TEXT.encode("utf-8"), 0o644),
         ("./postinst", POSTINST_TEXT.encode("utf-8"), 0o755),
         ("./prerm", PRERM_TEXT.encode("utf-8"), 0o755),
+        ("./postrm", POSTRM_TEXT.encode("utf-8"), 0o755),
     ])
 
 
@@ -207,6 +232,7 @@ def make_data_tar() -> bytes:
                 "VERSION",
                 "requirements-rpi.txt",
                 "install_raspberry_pi.sh",
+                "uninstall_raspberry_pi.sh",
                 "run_raspberry_pi.sh",
             ]:
                 source = ROOT_DIR / relative

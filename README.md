@@ -17,19 +17,19 @@ Raspberry Pi에서는 `xrandr`로 연결된 모니터 크기와 위치를 감지
 
 최신 설치 파일은 GitHub Releases에서 받을 수 있습니다. 일반 사용자는 아래 파일만 다운로드하면 됩니다.
 
-- Windows: [CafeKiosk-Windows-Setup-1.1.6.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.6/CafeKiosk-Windows-Setup-1.1.6.exe)
-- Raspberry Pi 더블클릭 설치: [CafeKiosk-RPi-Installer-1.1.6.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.6/CafeKiosk-RPi-Installer-1.1.6.zip)
-- Raspberry Pi 직접 설치: [cafe-kiosk-rpi_1.1.6_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.6/cafe-kiosk-rpi_1.1.6_all.deb)
-- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.1.6.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.6/CafeKiosk-Windows-Portable-1.1.6.zip)
+- Windows: [CafeKiosk-Windows-Setup-1.1.7.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.7/CafeKiosk-Windows-Setup-1.1.7.exe)
+- Raspberry Pi 더블클릭 설치: [CafeKiosk-RPi-Installer-1.1.7.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.7/CafeKiosk-RPi-Installer-1.1.7.zip)
+- Raspberry Pi 직접 설치: [cafe-kiosk-rpi_1.1.7_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.7/cafe-kiosk-rpi_1.1.7_all.deb)
+- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.1.7.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.7/CafeKiosk-Windows-Portable-1.1.7.zip)
 
 릴리즈 페이지:
-[Cafe Kiosk v1.1.6](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.1.6)
+[Cafe Kiosk v1.1.7](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.1.7)
 
 ## 설치 방법
 
 Windows:
 
-1. `CafeKiosk-Windows-Setup-1.1.6.exe`를 다운로드합니다.
+1. `CafeKiosk-Windows-Setup-1.1.7.exe`를 다운로드합니다.
 2. 설치 파일을 실행합니다.
 3. 설치가 끝나면 바탕화면의 `BEAN & BREW Cafe Kiosk` 바로가기로 실행합니다.
 
@@ -39,7 +39,7 @@ Windows에서 SmartScreen 경고가 표시될 수 있습니다. 개인 개발자
 
 Raspberry Pi / Linux 더블클릭 설치:
 
-1. `CafeKiosk-RPi-Installer-1.1.6.zip`을 다운로드합니다.
+1. `CafeKiosk-RPi-Installer-1.1.7.zip`을 다운로드합니다.
 2. 압축을 풉니다.
 3. `설치하기.desktop` 파일을 더블클릭합니다.
 4. 실행 허용 또는 신뢰 확인 창이 뜨면 허용합니다.
@@ -51,15 +51,35 @@ Raspberry Pi / Linux 더블클릭 설치:
 
 Raspberry Pi / Linux 직접 설치:
 
-1. `cafe-kiosk-rpi_1.1.6_all.deb`를 다운로드합니다.
+1. `cafe-kiosk-rpi_1.1.7_all.deb`를 다운로드합니다.
 2. 파일이 있는 폴더에서 아래 명령을 실행합니다.
 
 ```bash
-sudo apt install ./cafe-kiosk-rpi_1.1.6_all.deb
+sudo apt install ./cafe-kiosk-rpi_1.1.7_all.deb
 cafe-kiosk
 ```
 
 설치 중 인터넷 연결이 필요할 수 있습니다. Python 패키지, TTS, 마이크 관련 구성요소를 설치하기 때문입니다.
+
+Raspberry Pi / Linux 삭제:
+
+```bash
+sudo apt remove cafe-kiosk-rpi
+```
+
+패키지 설치 파일, `/opt/cafe-kiosk`의 가상환경, 설치 로그(`install_logs`, `installer_logs`, `logs`), 런처는 삭제됩니다. 주문 이력 DB와 사용자 설정은 `~/.config/bean_brew_cafe_kiosk/`에 보존됩니다. 이 데이터까지 삭제하려면 아래 명령을 추가로 실행합니다.
+
+```bash
+rm -rf ~/.config/bean_brew_cafe_kiosk
+```
+
+소스 폴더에서 `install_raspberry_pi.sh`로 직접 설치한 경우에는 다음 명령으로 정리합니다.
+
+```bash
+bash uninstall_raspberry_pi.sh
+```
+
+직접 설치 정리 시 사용자 설정/주문 DB까지 함께 삭제하려면 `bash uninstall_raspberry_pi.sh --purge-user-data`를 사용합니다.
 
 ## 주요 기능
 

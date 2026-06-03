@@ -198,6 +198,29 @@ requirements-rpi.txt에 포함된 주요 pip 패키지:
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Raspberry Pi / Linux 삭제 방법
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  [deb 설치 파일로 설치한 경우]
+    sudo apt remove cafe-kiosk-rpi
+
+    위 명령은 /opt/cafe-kiosk의 프로그램 파일, 가상환경(.venv-rpi),
+    설치 로그(install_logs, installer_logs, logs), 실행 런처를 정리합니다.
+
+    주문 이력 DB와 사용자 설정은 아래 위치에 보존됩니다.
+      ~/.config/bean_brew_cafe_kiosk/
+
+    사용자 설정과 주문 이력까지 완전히 삭제하려면:
+      rm -rf ~/.config/bean_brew_cafe_kiosk
+
+  [install_raspberry_pi.sh로 직접 설치한 경우]
+    bash uninstall_raspberry_pi.sh
+
+    사용자 설정과 주문 이력까지 함께 삭제하려면:
+      bash uninstall_raspberry_pi.sh --purge-user-data
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 사용 방법
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

@@ -36,6 +36,7 @@ cp "$ROOT_DIR/LICENSE" "$APP_DIR/"
 cp "$ROOT_DIR/VERSION" "$APP_DIR/"
 cp "$ROOT_DIR/requirements-rpi.txt" "$APP_DIR/"
 cp "$ROOT_DIR/install_raspberry_pi.sh" "$APP_DIR/"
+cp "$ROOT_DIR/uninstall_raspberry_pi.sh" "$APP_DIR/"
 cp "$ROOT_DIR/run_raspberry_pi.sh" "$APP_DIR/"
 mkdir -p "$APP_DIR/cafe_kiosk"
 cp -a "$ROOT_DIR/cafe_kiosk/." "$APP_DIR/cafe_kiosk/"
@@ -143,7 +144,26 @@ rm -f /usr/local/bin/cafe-kiosk
 exit 0
 EOF_PRERM
 
-chmod 755 "$PKG_DIR/DEBIAN/postinst" "$PKG_DIR/DEBIAN/prerm"
+cat > "$PKG_DIR/DEBIAN/postrm" <<'EOF_POSTRM'
+#!/bin/sh
+set -e
+
+APP_DIR="/opt/cafe-kiosk"
+
+rm -f /usr/local/bin/cafe-kiosk
+rm -f /var/log/bean-brew-cafe-kiosk-install.log
+rm -rf "$APP_DIR/.venv-rpi" "$APP_DIR/install_logs" "$APP_DIR/installer_logs" "$APP_DIR/logs"
+
+if [ -d "$APP_DIR" ]; then
+    find "$APP_DIR" -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
+    find "$APP_DIR" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete 2>/dev/null || true
+    find "$APP_DIR" -depth -type d -empty -delete 2>/dev/null || true
+fi
+
+exit 0
+EOF_POSTRM
+
+chmod 755 "$PKG_DIR/DEBIAN/postinst" "$PKG_DIR/DEBIAN/prerm" "$PKG_DIR/DEBIAN/postrm"
 
 step "deb 패키지 생성"
 DEB_PATH="$DIST_DIR/${PKG_NAME}_${VERSION}_all.deb"
