@@ -1,7 +1,7 @@
 #define AppName "BEAN & BREW Cafe Kiosk"
 #define AppPublisher "이지우"
 #ifndef AppVersion
-#define AppVersion "1.0.0"
+#define AppVersion "1.1.5"
 #endif
 #define SourceRoot "..\.."
 
