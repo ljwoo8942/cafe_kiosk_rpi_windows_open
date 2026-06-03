@@ -87,15 +87,25 @@ class InstallerApp:
         self.log_path = self.log_dir / f"rpi_gui_install_{stamp}.txt"
         self.queue: queue.Queue[tuple[str, str | None]] = queue.Queue()
         self.installing = False
+        self.screen_width = max(1, self.root.winfo_screenwidth())
+        self.screen_height = max(1, self.root.winfo_screenheight())
+        self.compact = self.screen_height <= 520
 
         self.root.title(APP_TITLE)
         self.root.configure(bg=BG)
-        self.root.geometry("720x560")
-        self.root.minsize(560, 420)
+        self._configure_window()
 
         self.status_var = tk.StringVar(value=self._initial_status())
         self._build_ui()
         self._poll_queue()
+
+    def _configure_window(self) -> None:
+        width = min(720, max(500, self.screen_width - 24))
+        height = min(560, max(360, self.screen_height - 48))
+        x = max(0, (self.screen_width - width) // 2)
+        y = max(0, (self.screen_height - height) // 2)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        self.root.minsize(min(width, 500), min(height, 360))
 
     def _initial_status(self) -> str:
         if self.deb_path:
@@ -103,13 +113,18 @@ class InstallerApp:
         return "설치 파일을 찾을 수 없습니다."
 
     def _build_ui(self) -> None:
-        outer = tk.Frame(self.root, bg=BG, padx=22, pady=18)
+        outer = tk.Frame(
+            self.root,
+            bg=BG,
+            padx=14 if self.compact else 22,
+            pady=10 if self.compact else 18,
+        )
         outer.pack(fill="both", expand=True)
 
         tk.Label(
             outer,
             text="BEAN & BREW Cafe Kiosk",
-            font=("Arial", 24, "bold"),
+            font=("Arial", 20 if self.compact else 24, "bold"),
             bg=BG,
             fg=INK,
             anchor="w",
@@ -117,11 +132,11 @@ class InstallerApp:
         tk.Label(
             outer,
             text="라즈베리파이에 카페 키오스크를 설치합니다.",
-            font=("Arial", 12),
+            font=("Arial", 11 if self.compact else 12),
             bg=BG,
             fg=MUTED,
             anchor="w",
-        ).pack(fill="x", pady=(4, 14))
+        ).pack(fill="x", pady=(2 if self.compact else 4, 8 if self.compact else 14))
 
         status = tk.Label(
             outer,
@@ -131,15 +146,15 @@ class InstallerApp:
             fg=INK,
             anchor="w",
             padx=12,
-            pady=10,
+            pady=7 if self.compact else 10,
             relief="solid",
             bd=1,
         )
-        status.pack(fill="x", pady=(0, 12))
+        status.pack(fill="x", pady=(0, 8 if self.compact else 12))
 
         self.log = scrolledtext.ScrolledText(
             outer,
-            height=14,
+            height=7 if self.compact else 14,
             font=("Consolas", 10),
             bg="#111827",
             fg="#e5e7eb",
@@ -149,7 +164,7 @@ class InstallerApp:
         self.log.pack(fill="both", expand=True)
 
         button_row = tk.Frame(outer, bg=BG)
-        button_row.pack(fill="x", pady=(14, 0))
+        button_row.pack(fill="x", pady=(8 if self.compact else 14, 0))
 
         self.install_button = tk.Button(
             button_row,
@@ -159,10 +174,10 @@ class InstallerApp:
             fg="white",
             activebackground="#1d4ed8",
             activeforeground="white",
-            font=("Arial", 13, "bold"),
+            font=("Arial", 11 if self.compact else 13, "bold"),
             relief="flat",
-            padx=18,
-            pady=10,
+            padx=12 if self.compact else 18,
+            pady=7 if self.compact else 10,
         )
         self.install_button.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
@@ -174,10 +189,10 @@ class InstallerApp:
             fg="white",
             activebackground="#166534",
             activeforeground="white",
-            font=("Arial", 13, "bold"),
+            font=("Arial", 11 if self.compact else 13, "bold"),
             relief="flat",
-            padx=18,
-            pady=10,
+            padx=12 if self.compact else 18,
+            pady=7 if self.compact else 10,
         ).pack(side="left", fill="x", expand=True, padx=8)
 
         tk.Button(
@@ -188,14 +203,14 @@ class InstallerApp:
             fg="white",
             activebackground="#be123c",
             activeforeground="white",
-            font=("Arial", 13, "bold"),
+            font=("Arial", 11 if self.compact else 13, "bold"),
             relief="flat",
-            padx=18,
-            pady=10,
+            padx=12 if self.compact else 18,
+            pady=7 if self.compact else 10,
         ).pack(side="left", fill="x", expand=True, padx=(8, 0))
 
         second_row = tk.Frame(outer, bg=BG)
-        second_row.pack(fill="x", pady=(8, 0))
+        second_row.pack(fill="x", pady=(6 if self.compact else 8, 0))
 
         tk.Button(
             second_row,
@@ -208,7 +223,7 @@ class InstallerApp:
             font=("Arial", 11, "bold"),
             relief="flat",
             padx=12,
-            pady=8,
+            pady=6 if self.compact else 8,
         ).pack(side="left", fill="x", expand=True, padx=(0, 4))
 
         tk.Button(
@@ -222,7 +237,7 @@ class InstallerApp:
             font=("Arial", 11, "bold"),
             relief="flat",
             padx=12,
-            pady=8,
+            pady=6 if self.compact else 8,
         ).pack(side="left", fill="x", expand=True, padx=(4, 0))
 
         self.append("설치 도우미가 시작되었습니다.")
@@ -305,6 +320,11 @@ class InstallerApp:
             code = proc.wait()
         except Exception as exc:
             self.append(f"설치 실행 오류: {exc}")
+            if command and command[0] == "pkexec":
+                self.append("그래픽 권한 요청이 실패했습니다. 터미널 설치 방식으로 다시 안내합니다.")
+                self._open_terminal_install()
+                self.queue.put(("done", None))
+                return
             self.set_status("설치 실행 중 오류가 발생했습니다.")
             self.queue.put(("done", None))
             return
@@ -314,6 +334,12 @@ class InstallerApp:
             self.append("프로그램 실행 버튼 또는 메뉴의 BEAN & BREW Cafe Kiosk로 실행할 수 있습니다.")
             self.set_status("설치 완료")
         else:
+            if command and command[0] == "pkexec":
+                self.append(f"그래픽 권한 설치가 완료되지 않았습니다. 종료 코드: {code}")
+                self.append("터미널 설치 방식으로 다시 안내합니다.")
+                self._open_terminal_install()
+                self.queue.put(("done", None))
+                return
             self.append(f"설치가 실패했습니다. 종료 코드: {code}")
             self.append(f"로그 파일을 개발자에게 보내 주세요: {self.log_path}")
             self.set_status("설치 실패 - 로그를 확인해 주세요.")
@@ -324,8 +350,6 @@ class InstallerApp:
         if shutil.which("pkexec"):
             return [
                 "pkexec",
-                "env",
-                "DEBIAN_FRONTEND=noninteractive",
                 "apt",
                 "install",
                 "-y",
@@ -343,11 +367,7 @@ class InstallerApp:
             self.append(f"터미널에서 직접 실행해 주세요: sudo apt install {self.deb_path}")
             self.set_status("수동 설치가 필요합니다.")
             return
-        script = (
-            "sudo apt install -y \"$CAFE_KIOSK_DEB_PATH\"; "
-            "echo; echo '설치가 끝났습니다. 이 창을 닫아도 됩니다.'; "
-            "read -r -p 'Enter를 누르면 닫습니다.'"
-        )
+        script = terminal_install_script()
         env = os.environ.copy()
         env["CAFE_KIOSK_DEB_PATH"] = str(self.deb_path)
         try:
@@ -394,6 +414,18 @@ def main() -> int:
     InstallerApp(root)
     root.mainloop()
     return 0
+
+
+def terminal_install_script() -> str:
+    return (
+        "if sudo apt install -y \"$CAFE_KIOSK_DEB_PATH\"; then "
+        "echo; echo '설치가 완료되었습니다.'; "
+        "echo '프로그램은 cafe-kiosk 명령 또는 메뉴 아이콘으로 실행할 수 있습니다.'; "
+        "else code=$?; "
+        "echo; echo \"설치가 실패했습니다. 종료 코드: $code\"; "
+        "echo '인터넷 연결, apt/dpkg 상태, 패키지 파일 위치를 확인해 주세요.'; "
+        "fi; echo; read -r -p 'Enter를 누르면 닫습니다.'"
+    )
 
 
 if __name__ == "__main__":

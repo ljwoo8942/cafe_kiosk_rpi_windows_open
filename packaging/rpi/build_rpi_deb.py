@@ -112,7 +112,7 @@ GUI_DESKTOP_TEXT = """[Desktop Entry]
 Type=Application
 Name=BEAN & BREW Cafe Kiosk 설치하기
 Comment=Install BEAN & BREW Cafe Kiosk
-Exec=sh -c "cd \\"$(dirname \\"$1\\")\\" && ./install_rpi_gui.sh" sh %k
+Exec=sh -c "cd \\"$(dirname \\"$1\\")\\" && bash ./install_rpi_gui.sh" sh %k
 Terminal=false
 Categories=Utility;
 """

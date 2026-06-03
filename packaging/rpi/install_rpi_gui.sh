@@ -22,7 +22,7 @@ if [[ -z "$DEB_PATH" ]]; then
 fi
 
 export CAFE_KIOSK_DEB_PATH="$DEB_PATH"
-INSTALL_CMD='sudo apt install -y "$CAFE_KIOSK_DEB_PATH"; echo; echo "설치가 끝났습니다. 이 창을 닫아도 됩니다."; read -r -p "Enter를 누르면 닫습니다."'
+INSTALL_CMD='if sudo apt install -y "$CAFE_KIOSK_DEB_PATH"; then echo; echo "설치가 완료되었습니다."; echo "프로그램은 cafe-kiosk 명령 또는 메뉴 아이콘으로 실행할 수 있습니다."; else code=$?; echo; echo "설치가 실패했습니다. 종료 코드: $code"; echo "인터넷 연결, apt/dpkg 상태, 패키지 파일 위치를 확인해 주세요."; fi; echo; read -r -p "Enter를 누르면 닫습니다."'
 
 for term in lxterminal x-terminal-emulator konsole xterm; do
   if command -v "$term" >/dev/null 2>&1; then
