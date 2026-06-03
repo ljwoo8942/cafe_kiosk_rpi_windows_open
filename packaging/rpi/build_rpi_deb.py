@@ -98,14 +98,27 @@ POSTRM_TEXT = """#!/bin/sh
 set -e
 
 APP_DIR="/opt/cafe-kiosk"
+USER_CONFIG_NAME="bean_brew_cafe_kiosk"
 
 rm -f /usr/local/bin/cafe-kiosk
+rm -f /usr/share/applications/bean-brew-cafe-kiosk.desktop
 rm -f /var/log/bean-brew-cafe-kiosk-install.log
 rm -rf "$APP_DIR/.venv-rpi" "$APP_DIR/install_logs" "$APP_DIR/installer_logs" "$APP_DIR/logs"
+rm -rf "$APP_DIR/cafe_kiosk/tts_cache"
+rm -rf /tmp/bean_brew_cafe_kiosk_updates
+rm -rf /tmp/bean_brew_cafe_kiosk_restore_extract
+rm -rf /tmp/bean_brew_portable_update_extract
+rm -rf /tmp/bean_brew_portable_update_restore
+rm -f /tmp/bean_brew_portable_update.ps1
+rm -rf "/root/.config/$USER_CONFIG_NAME"
+
+if [ -d /home ]; then
+    find /home -mindepth 3 -maxdepth 3 -type d -path "*/.config/$USER_CONFIG_NAME" -exec rm -rf {} + 2>/dev/null || true
+fi
 
 if [ -d "$APP_DIR" ]; then
     find "$APP_DIR" -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true
-    find "$APP_DIR" -type f \\( -name '*.pyc' -o -name '*.pyo' \\) -delete 2>/dev/null || true
+    find "$APP_DIR" -type f \\( -name '*.pyc' -o -name '*.pyo' -o -name '*.json' -o -name '*.db' -o -name '*.db-*' -o -name '*.log' -o -name '*.tmp' \\) -delete 2>/dev/null || true
     find "$APP_DIR" -depth -type d -empty -delete 2>/dev/null || true
 fi
 
@@ -161,8 +174,7 @@ Dialogflow 인증 파일은 첫 실행 마법사에서 등록할 수 있으며,
 삭제 방법:
 sudo apt remove cafe-kiosk-rpi
 
-주문 이력 DB와 사용자 설정까지 삭제하려면:
-rm -rf ~/.config/bean_brew_cafe_kiosk
+프로그램 파일, 사용자 설정, 주문 이력 DB, 로그, 캐시까지 함께 삭제됩니다.
 """
 
 EXCLUDED_DIRS = {"__pycache__", "tts_cache", ".vs", ".vscode"}

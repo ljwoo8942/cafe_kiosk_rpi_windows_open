@@ -17,19 +17,19 @@ Raspberry Pi에서는 `xrandr`로 연결된 모니터 크기와 위치를 감지
 
 최신 설치 파일은 GitHub Releases에서 받을 수 있습니다. 일반 사용자는 아래 파일만 다운로드하면 됩니다.
 
-- Windows: [CafeKiosk-Windows-Setup-1.1.7.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.7/CafeKiosk-Windows-Setup-1.1.7.exe)
-- Raspberry Pi 더블클릭 설치: [CafeKiosk-RPi-Installer-1.1.7.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.7/CafeKiosk-RPi-Installer-1.1.7.zip)
-- Raspberry Pi 직접 설치: [cafe-kiosk-rpi_1.1.7_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.7/cafe-kiosk-rpi_1.1.7_all.deb)
-- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.1.7.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.7/CafeKiosk-Windows-Portable-1.1.7.zip)
+- Windows: [CafeKiosk-Windows-Setup-1.1.8.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.8/CafeKiosk-Windows-Setup-1.1.8.exe)
+- Raspberry Pi 더블클릭 설치: [CafeKiosk-RPi-Installer-1.1.8.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.8/CafeKiosk-RPi-Installer-1.1.8.zip)
+- Raspberry Pi 직접 설치: [cafe-kiosk-rpi_1.1.8_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.8/cafe-kiosk-rpi_1.1.8_all.deb)
+- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.1.8.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.1.8/CafeKiosk-Windows-Portable-1.1.8.zip)
 
 릴리즈 페이지:
-[Cafe Kiosk v1.1.7](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.1.7)
+[Cafe Kiosk v1.1.8](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.1.8)
 
 ## 설치 방법
 
 Windows:
 
-1. `CafeKiosk-Windows-Setup-1.1.7.exe`를 다운로드합니다.
+1. `CafeKiosk-Windows-Setup-1.1.8.exe`를 다운로드합니다.
 2. 설치 파일을 실행합니다.
 3. 설치가 끝나면 바탕화면의 `BEAN & BREW Cafe Kiosk` 바로가기로 실행합니다.
 
@@ -37,9 +37,15 @@ Windows:
 
 Windows에서 SmartScreen 경고가 표시될 수 있습니다. 개인 개발자가 배포한 서명되지 않은 설치 파일에서 발생할 수 있으며, 실행하려면 `추가 정보`를 누른 뒤 `실행`을 선택합니다.
 
+Windows 삭제:
+
+1. Windows 설정의 앱 목록에서 `BEAN & BREW Cafe Kiosk`를 제거합니다.
+2. 제거 시 설치 폴더, 가상환경, TTS 캐시, Dialogflow 인증 파일, 사용자 설정, 주문 이력 DB, 로그, 업데이트 임시 파일까지 함께 삭제됩니다.
+3. Windows 무설치 압축본을 사용한 경우에는 압축을 푼 폴더에서 `powershell -ExecutionPolicy Bypass -File .\uninstall_windows.ps1 -RemoveAppRoot`를 실행하면 앱 폴더와 사용자 데이터까지 함께 정리됩니다.
+
 Raspberry Pi / Linux 더블클릭 설치:
 
-1. `CafeKiosk-RPi-Installer-1.1.7.zip`을 다운로드합니다.
+1. `CafeKiosk-RPi-Installer-1.1.8.zip`을 다운로드합니다.
 2. 압축을 풉니다.
 3. `설치하기.desktop` 파일을 더블클릭합니다.
 4. 실행 허용 또는 신뢰 확인 창이 뜨면 허용합니다.
@@ -51,11 +57,11 @@ Raspberry Pi / Linux 더블클릭 설치:
 
 Raspberry Pi / Linux 직접 설치:
 
-1. `cafe-kiosk-rpi_1.1.7_all.deb`를 다운로드합니다.
+1. `cafe-kiosk-rpi_1.1.8_all.deb`를 다운로드합니다.
 2. 파일이 있는 폴더에서 아래 명령을 실행합니다.
 
 ```bash
-sudo apt install ./cafe-kiosk-rpi_1.1.7_all.deb
+sudo apt install ./cafe-kiosk-rpi_1.1.8_all.deb
 cafe-kiosk
 ```
 
@@ -67,11 +73,7 @@ Raspberry Pi / Linux 삭제:
 sudo apt remove cafe-kiosk-rpi
 ```
 
-패키지 설치 파일, `/opt/cafe-kiosk`의 가상환경, 설치 로그(`install_logs`, `installer_logs`, `logs`), 런처는 삭제됩니다. 주문 이력 DB와 사용자 설정은 `~/.config/bean_brew_cafe_kiosk/`에 보존됩니다. 이 데이터까지 삭제하려면 아래 명령을 추가로 실행합니다.
-
-```bash
-rm -rf ~/.config/bean_brew_cafe_kiosk
-```
+패키지 설치 파일, `/opt/cafe-kiosk`의 가상환경, 설치 로그(`install_logs`, `installer_logs`, `logs`), 런처, TTS 캐시, Dialogflow 인증 파일, 사용자 설정, 주문 이력 DB, 업데이트 임시 파일까지 함께 삭제됩니다.
 
 소스 폴더에서 `install_raspberry_pi.sh`로 직접 설치한 경우에는 다음 명령으로 정리합니다.
 
@@ -79,7 +81,7 @@ rm -rf ~/.config/bean_brew_cafe_kiosk
 bash uninstall_raspberry_pi.sh
 ```
 
-직접 설치 정리 시 사용자 설정/주문 DB까지 함께 삭제하려면 `bash uninstall_raspberry_pi.sh --purge-user-data`를 사용합니다.
+직접 설치 정리도 기본적으로 사용자 설정/주문 DB까지 함께 삭제합니다. 설정과 주문 이력을 남기고 싶을 때만 `bash uninstall_raspberry_pi.sh --keep-user-data`를 사용합니다.
 
 ## 주요 기능
 

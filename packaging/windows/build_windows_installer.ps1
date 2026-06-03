@@ -69,6 +69,7 @@ function New-PortableZip {
         "VERSION",
         "requirements-windows.txt",
         "install_windows.ps1",
+        "uninstall_windows.ps1",
         "run_windows.cmd"
     )) {
         Copy-ProjectFile -RelativePath $file -TargetRoot $stage
