@@ -149,3 +149,10 @@ step "deb 패키지 생성"
 DEB_PATH="$DIST_DIR/${PKG_NAME}_${VERSION}_all.deb"
 dpkg-deb --build "$PKG_DIR" "$DEB_PATH"
 echo "생성 완료: $DEB_PATH"
+
+step "더블클릭 GUI 설치 ZIP 생성"
+if command -v python3 >/dev/null 2>&1; then
+  python3 "$ROOT_DIR/packaging/rpi/build_rpi_deb.py" --zip-only "$DEB_PATH"
+else
+  echo "python3를 찾을 수 없어 GUI 설치 ZIP 생성을 건너뜁니다." >&2
+fi
