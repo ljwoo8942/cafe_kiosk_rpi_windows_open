@@ -1,7 +1,7 @@
 #define AppName "BEAN & BREW Cafe Kiosk"
 #define AppPublisher "이지우"
 #ifndef AppVersion
-#define AppVersion "1.1.5"
+#define AppVersion "1.1.6"
 #endif
 #define SourceRoot "..\.."
 
@@ -40,3 +40,12 @@ Name: "{group}\설치/복구 실행"; Filename: "powershell.exe"; Parameters: "-
 
 [Run]
 Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\install_windows.ps1"" -NoShortcut"; WorkingDir: "{app}"; StatusMsg: "필수 Python 패키지를 설치하는 중입니다..."; Flags: runascurrentuser
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}\.venv-windows"
+Type: filesandordirs; Name: "{app}\install_logs"
+Type: filesandordirs; Name: "{app}\logs"
+Type: filesandordirs; Name: "{app}\cafe_kiosk\__pycache__"
+Type: files; Name: "{app}\cafe_kiosk\*.pyc"
+Type: files; Name: "{app}\cafe_kiosk\*.pyo"
+Type: dirifempty; Name: "{app}"
