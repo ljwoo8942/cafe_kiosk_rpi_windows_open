@@ -1,7 +1,7 @@
 #define AppName "BEAN & BREW Cafe Kiosk"
 #define AppPublisher "이지우"
 #ifndef AppVersion
-#define AppVersion "1.1.8"
+#define AppVersion "1.2.0"
 #endif
 #define SourceRoot "..\.."
 
@@ -32,6 +32,7 @@ Source: "{#SourceRoot}\requirements-windows.txt"; DestDir: "{app}"; Flags: ignor
 Source: "{#SourceRoot}\install_windows.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\uninstall_windows.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\run_windows.cmd"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\launch_windows.pyw"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\cafe_kiosk\*"; DestDir: "{app}\cafe_kiosk"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__\*,.vs\*,.vscode\*,*.pyc,*.pyo,*.db,*.db-*,*.json,tts_cache\*"
 
 [Icons]

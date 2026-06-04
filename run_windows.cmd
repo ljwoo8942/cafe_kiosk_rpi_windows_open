@@ -4,6 +4,8 @@ set "ROOT=%~dp0"
 cd /d "%ROOT%"
 set "PYTHON=.venv-windows\Scripts\pythonw.exe"
 set "CHECKPYTHON=.venv-windows\Scripts\python.exe"
+set "APP_MAIN=%ROOT%cafe_kiosk\cafe_kiosk_final.py"
+set "APP_LAUNCHER=%ROOT%launch_windows.pyw"
 
 if not exist "%PYTHON%" (
     set "PYTHON=%CHECKPYTHON%"
@@ -15,8 +17,8 @@ if exist "%PYTHON%" (
 )
 
 if not "%PYTHON%"=="" (
-    cd /d "%ROOT%cafe_kiosk"
-    start "" "%ROOT%%PYTHON%" "%ROOT%cafe_kiosk\cafe_kiosk_final.py"
+    cd /d "%ROOT%"
+    start "" "%ROOT%%PYTHON%" "%APP_LAUNCHER%" "%APP_MAIN%"
     exit /b 0
 )
 
@@ -41,15 +43,15 @@ where py >nul 2>nul
 if not errorlevel 1 (
     call :CheckPyLauncher -3.13
     if not errorlevel 1 (
-        cd /d "%ROOT%cafe_kiosk"
-        start "" py -3.13 "%ROOT%cafe_kiosk\cafe_kiosk_final.py"
+        cd /d "%ROOT%"
+        start "" py -3.13 "%APP_LAUNCHER%" "%APP_MAIN%"
         exit /b 0
     )
 
     call :CheckPyLauncher -3
     if not errorlevel 1 (
-        cd /d "%ROOT%cafe_kiosk"
-        start "" py -3 "%ROOT%cafe_kiosk\cafe_kiosk_final.py"
+        cd /d "%ROOT%"
+        start "" py -3 "%APP_LAUNCHER%" "%APP_MAIN%"
         exit /b 0
     )
 )
@@ -58,8 +60,8 @@ where python >nul 2>nul
 if not errorlevel 1 (
     call :CheckPython python
     if not errorlevel 1 (
-        cd /d "%ROOT%cafe_kiosk"
-        start "" python "%ROOT%cafe_kiosk\cafe_kiosk_final.py"
+        cd /d "%ROOT%"
+        start "" python "%APP_LAUNCHER%" "%APP_MAIN%"
         exit /b 0
     )
 )
@@ -86,6 +88,6 @@ set "CHECK_EXE=%~1"
 if /I "%~nx1"=="pythonw.exe" if exist "%~dp1python.exe" set "CHECK_EXE=%~dp1python.exe"
 call :CheckPython "%CHECK_EXE%"
 if errorlevel 1 exit /b 1
-cd /d "%ROOT%cafe_kiosk"
-start "" "%~1" "%ROOT%cafe_kiosk\cafe_kiosk_final.py"
+cd /d "%ROOT%"
+start "" "%~1" "%APP_LAUNCHER%" "%APP_MAIN%"
 exit /b 0

@@ -70,7 +70,8 @@ function New-PortableZip {
         "requirements-windows.txt",
         "install_windows.ps1",
         "uninstall_windows.ps1",
-        "run_windows.cmd"
+        "run_windows.cmd",
+        "launch_windows.pyw"
     )) {
         Copy-ProjectFile -RelativePath $file -TargetRoot $stage
     }

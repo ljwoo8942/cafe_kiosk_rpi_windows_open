@@ -7321,7 +7321,7 @@ class CafeKioskApp:
         self._first_setup_window = popup
         popup.title("초기 설정")
         popup.configure(bg="#102033")
-        popup.resizable(False, False)
+        popup.resizable(True, True)
         _setup_modal_popup(popup, owner)
 
         owner.update_idletasks()
@@ -7350,8 +7350,32 @@ class CafeKioskApp:
 
         popup.protocol("WM_DELETE_WINDOW", lambda: _close(True))
 
-        outer = tk.Frame(popup, bg="#102033", padx=_px(16), pady=_px(14))
-        outer.pack(fill="both", expand=True)
+        scroll_area = tk.Frame(popup, bg="#102033")
+        scroll_area.pack(fill="both", expand=True)
+
+        wizard_canvas = tk.Canvas(scroll_area, bg="#102033", highlightthickness=0)
+        wizard_scroll = tk.Scrollbar(
+            scroll_area, orient="vertical", command=wizard_canvas.yview,
+            width=max(12, _px(14)), relief="flat", bd=0,
+            troughcolor="#0d1b2a", bg="#7ecfff", activebackground="#ffd166",
+            elementborderwidth=0, highlightthickness=0
+        )
+        wizard_canvas.configure(yscrollcommand=wizard_scroll.set)
+        wizard_canvas.pack(side="left", fill="both", expand=True)
+        wizard_scroll.pack(side="right", fill="y")
+
+        outer = tk.Frame(wizard_canvas, bg="#102033", padx=_px(16), pady=_px(12))
+        outer_window = wizard_canvas.create_window((0, 0), window=outer, anchor="nw")
+        outer.bind(
+            "<Configure>",
+            lambda _e: wizard_canvas.configure(scrollregion=wizard_canvas.bbox("all"))
+        )
+        wizard_canvas.bind(
+            "<Configure>",
+            lambda e: wizard_canvas.itemconfig(outer_window, width=max(1, e.width))
+        )
+        _bind_canvas_wheel(wizard_canvas, outer)
+        _bind_canvas_touch_drag(wizard_canvas, outer)
 
         tk.Label(outer, text="초기 설정",
                  font=(FONT_UI, _fs(20), "bold"),
@@ -7404,16 +7428,16 @@ class CafeKioskApp:
                       font=(FONT_UI, _fs(10), "bold"),
                       bg=color, fg="white",
                       activebackground=color, activeforeground="white",
-                      relief="flat", padx=_px(8), pady=_px(7), cursor="hand2",
+                      relief="flat", padx=_px(8), pady=_px(5), cursor="hand2",
                       command=command).grid(row=idx // 2, column=idx % 2,
-                                            sticky="ew", padx=_px(4), pady=_px(4))
+                                            sticky="ew", padx=_px(4), pady=_px(3))
 
         tk.Button(outer, text="완료",
                   font=(FONT_UI, _fs(12), "bold"),
                   bg="#16a34a", fg="white",
                   activebackground="#15803d", activeforeground="white",
-                  relief="flat", padx=_px(10), pady=_px(8), cursor="hand2",
-                  command=lambda: _close(True)).pack(fill="x", pady=(_px(12), 0))
+                  relief="flat", padx=_px(10), pady=_px(6), cursor="hand2",
+                  command=lambda: _close(True)).pack(fill="x", pady=(_px(8), 0))
 
     def _save_settings_debounced(self, delay_ms: int = 500) -> None:
         """슬라이더 드래그 중 설정 파일 저장을 짧게 모아서 1회만 수행한다."""
