@@ -18,6 +18,23 @@ import sys
 import threading
 from pathlib import Path
 
+
+def ensure_utf8_environment() -> None:
+    for name in ("LANG", "LC_ALL"):
+        if os.environ.get(name, "") in ("", "C", "POSIX"):
+            os.environ[name] = "C.UTF-8"
+    os.environ.setdefault("PYTHONUTF8", "1")
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+ensure_utf8_environment()
+
 try:
     import tkinter as tk
     from tkinter import messagebox, scrolledtext

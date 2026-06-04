@@ -8,6 +8,15 @@
 
 set -euo pipefail
 
+case "${LANG:-}" in
+  ""|C|POSIX) export LANG=C.UTF-8 ;;
+esac
+case "${LC_ALL:-}" in
+  ""|C|POSIX) export LC_ALL=C.UTF-8 ;;
+esac
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 VERSION="$(tr -d '[:space:]' < "$ROOT_DIR/VERSION")"
@@ -93,10 +102,25 @@ cat > "$PKG_DIR/DEBIAN/postinst" <<'EOF_POSTINST'
 #!/bin/sh
 set -e
 
+case "${LANG:-}" in
+    ""|C|POSIX) LANG=C.UTF-8; export LANG ;;
+esac
+case "${LC_ALL:-}" in
+    ""|C|POSIX) LC_ALL=C.UTF-8; export LC_ALL ;;
+esac
+PYTHONUTF8=1; export PYTHONUTF8
+PYTHONIOENCODING=utf-8; export PYTHONIOENCODING
+
 APP_DIR="/opt/cafe-kiosk"
 VENV_DIR="$APP_DIR/.venv-rpi"
 
-if [ -x /usr/bin/python3 ]; then
+if [ -x "$VENV_DIR/bin/python" ]; then
+    if ! "$VENV_DIR/bin/python" -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)" >/dev/null 2>&1; then
+        rm -rf "$VENV_DIR"
+    fi
+fi
+
+if [ -x /usr/bin/python3 ] && [ ! -x "$VENV_DIR/bin/python" ]; then
     /usr/bin/python3 -m venv --system-site-packages "$VENV_DIR" || true
 fi
 

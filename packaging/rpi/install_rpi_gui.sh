@@ -3,6 +3,15 @@
 
 set -euo pipefail
 
+case "${LANG:-}" in
+  ""|C|POSIX) export LANG=C.UTF-8 ;;
+esac
+case "${LC_ALL:-}" in
+  ""|C|POSIX) export LC_ALL=C.UTF-8 ;;
+esac
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 

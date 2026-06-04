@@ -5,6 +5,15 @@
 
 set -euo pipefail
 
+case "${LANG:-}" in
+  ""|C|POSIX) export LANG=C.UTF-8 ;;
+esac
+case "${LC_ALL:-}" in
+  ""|C|POSIX) export LC_ALL=C.UTF-8 ;;
+esac
+export PYTHONUTF8=1
+export PYTHONIOENCODING=utf-8
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$ROOT_DIR/.venv-rpi"
 REQ_FILE="$ROOT_DIR/requirements-rpi.txt"
@@ -49,6 +58,12 @@ step() {
   printf '\n==> %s\n' "$1"
 }
 
+desktop_exec_quote() {
+  local value="${1//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '"%s"' "$value"
+}
+
 check_item() {
   local label="$1"
   shift
@@ -78,6 +93,17 @@ run_post_install_checks() {
   echo "설치/점검 로그: $INSTALL_LOG_FILE"
 }
 
+ensure_venv() {
+  if [[ -x "$VENV_DIR/bin/python" ]]; then
+    if "$VENV_DIR/bin/python" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 9) else 1)' >/dev/null 2>&1; then
+      return
+    fi
+    echo "기존 .venv-rpi가 현재 Python 환경과 맞지 않아 재생성합니다."
+    rm -rf "$VENV_DIR"
+  fi
+  python3 -m venv --system-site-packages "$VENV_DIR"
+}
+
 if [[ ! -f "$MAIN_FILE" ]]; then
   echo "메인 파일을 찾을 수 없습니다: $MAIN_FILE" >&2
   exit 1
@@ -104,9 +130,7 @@ else
 fi
 
 step "가상환경 생성"
-if [[ ! -d "$VENV_DIR" ]]; then
-  python3 -m venv --system-site-packages "$VENV_DIR"
-fi
+ensure_venv
 
 PYTHON="$VENV_DIR/bin/python"
 PIP="$VENV_DIR/bin/pip"
@@ -135,12 +159,13 @@ fi
 step "데스크톱 실행 아이콘 생성"
 mkdir -p "$HOME/.local/share/applications"
 DESKTOP_FILE="$HOME/.local/share/applications/bean-brew-cafe-kiosk.desktop"
+DESKTOP_RUNNER="$(desktop_exec_quote "$RUNNER")"
 cat > "$DESKTOP_FILE" <<EOF_DESKTOP
 [Desktop Entry]
 Type=Application
 Name=BEAN & BREW Cafe Kiosk
 Comment=Voice guided cafe kiosk
-Exec=$RUNNER
+Exec=$DESKTOP_RUNNER
 Path=$ROOT_DIR
 Terminal=false
 Categories=Utility;
