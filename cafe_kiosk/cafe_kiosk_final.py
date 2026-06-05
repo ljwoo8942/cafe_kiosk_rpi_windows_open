@@ -1603,6 +1603,44 @@ def _bind_canvas_touch_drag(canvas: tk.Canvas, *roots: tk.Misc) -> None:
         _bind_tree(root)
 
 
+def _scrollable_popup_body(parent: tk.Misc, bg: str,
+                           padx: int = 0, pady: int = 0) -> tk.Frame:
+    """작은 화면 팝업에서 본문만 스크롤되고 하단 버튼은 고정되도록 본문 Frame을 만든다."""
+    holder = tk.Frame(parent, bg=bg)
+    holder.pack(fill="both", expand=True)
+
+    canvas = tk.Canvas(holder, bg=bg, highlightthickness=0, bd=0)
+    scroll = tk.Scrollbar(holder, orient="vertical", command=canvas.yview)
+    body = tk.Frame(canvas, bg=bg, padx=padx, pady=pady)
+    body_window = canvas.create_window((0, 0), window=body, anchor="nw")
+
+    canvas.configure(yscrollcommand=scroll.set)
+    canvas.pack(side="left", fill="both", expand=True)
+    scroll.pack(side="right", fill="y")
+
+    def _refresh_scrollregion(_event=None) -> None:
+        if not _widget_exists(canvas):
+            return
+        try:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            _bind_canvas_wheel(canvas, holder, body)
+            _bind_canvas_touch_drag(canvas, holder, body)
+        except tk.TclError:
+            pass
+
+    def _fit_body_width(event) -> None:
+        try:
+            canvas.itemconfigure(body_window, width=event.width)
+        except tk.TclError:
+            pass
+
+    body.bind("<Configure>", _refresh_scrollregion, add="+")
+    canvas.bind("<Configure>", _fit_body_width, add="+")
+    _bind_canvas_wheel(canvas, holder, body)
+    _bind_canvas_touch_drag(canvas, holder, body)
+    return body
+
+
 def _existing_popup(func: "callable") -> "tk.Toplevel | None":
     """함수 속성에 저장된 팝업이 살아 있으면 반환하고, 죽었으면 참조를 정리한다."""
     popup = getattr(func, "_popup", None)
@@ -2467,7 +2505,7 @@ def show_order_type_popup(root: tk.Tk, on_selected: "callable") -> None:
     owner = _popup_owner(root)
     popup = tk.Toplevel(owner)
     popup.title("이용 방식 선택")
-    popup.resizable(False, False)
+    popup.resizable(True, True)
     popup.configure(bg="#fff8f0")
     _setup_modal_popup(popup, owner)
 
@@ -2477,12 +2515,13 @@ def show_order_type_popup(root: tk.Tk, on_selected: "callable") -> None:
     if base_w <= 1 or base_h <= 1:
         base_w = owner.winfo_screenwidth()
         base_h = owner.winfo_screenheight()
-    pw = max(360, min(700, base_w - 24))
-    ph = max(340, min(420, base_h - 24))
+    pw = max(340, min(700, base_w - 12))
+    ph = max(300, min(420, base_h - 12))
     _center_popup_on_owner(popup, owner, pw, ph)
     show_order_type_popup._popup = popup
 
-    small = ph < 390
+    small = ph < 390 or pw < 620
+    single_col = pw < 560 or ph < 370
 
     def _close() -> None:
         if _widget_exists(popup):
@@ -2494,30 +2533,38 @@ def show_order_type_popup(root: tk.Tk, on_selected: "callable") -> None:
 
     _select = _once_callback(_select_order_type)
 
-    footer = tk.Frame(popup, bg="#f5eadf", pady=_px(10))
+    footer = tk.Frame(popup, bg="#f5eadf", pady=_px(6 if small else 10))
     footer.pack(fill="x", side="bottom")
     tk.Button(footer, text="취소",
-              font=(FONT_UI, _fs(13 if small else 14), "bold"),
+              font=(FONT_UI, _fs(11 if small else 14), "bold"),
               bg="#ffffff", fg="#4b3a2b",
               activebackground="#efe2d4", activeforeground="#2b2118",
               relief="flat", width=10, height=1,
-              padx=_px(20), pady=_px(8),
+              padx=_px(16 if small else 20), pady=_px(5 if small else 8),
               cursor="hand2", command=_close).pack()
 
-    outer = tk.Frame(popup, bg="#fff8f0", padx=_px(22), pady=_px(18))
-    outer.pack(fill="both", expand=True)
+    outer = _scrollable_popup_body(
+        popup, "#fff8f0",
+        padx=_px(12 if small else 22),
+        pady=_px(8 if small else 18),
+    )
 
     tk.Label(outer, text="주문 방식을 선택해 주세요",
-             font=(FONT_UI, _fs(22 if small else 28), "bold"),
-             bg="#fff8f0", fg="#2b2118").pack(pady=(0, _px(6)))
+             font=(FONT_UI, _fs(18 if small else 28), "bold"),
+             bg="#fff8f0", fg="#2b2118",
+             wraplength=max(260, pw - 70),
+             justify="center").pack(pady=(0, _px(4 if small else 6)))
 
     tk.Label(outer, text="매장에서 드실지, 포장해서 가져가실지 선택해 주세요.",
-             font=(FONT_UI, _fs(10 if small else 12)),
-             bg="#fff8f0", fg="#7c5f45").pack(pady=(0, _px(18)))
+             font=(FONT_UI, _fs(9 if small else 12)),
+             bg="#fff8f0", fg="#7c5f45",
+             wraplength=max(260, pw - 70),
+             justify="center").pack(pady=(0, _px(8 if small else 18)))
 
     cards = tk.Frame(outer, bg="#fff8f0")
     cards.pack(fill="both", expand=True)
-    for col in range(2):
+    card_cols = 1 if single_col else 2
+    for col in range(card_cols):
         cards.columnconfigure(col, weight=1, uniform="order_type")
 
     options = [
@@ -2525,26 +2572,50 @@ def show_order_type_popup(root: tk.Tk, on_selected: "callable") -> None:
         ("🥡", "테이크 아웃", "포장해서 가져갈게요"),
     ]
 
-    for col, (icon, title, desc) in enumerate(options):
+    for idx, (icon, title, desc) in enumerate(options):
+        row = idx // card_cols
+        col = idx % card_cols
+        cards.rowconfigure(row, weight=1)
         card = tk.Frame(cards, bg="#ffffff",
                         highlightbackground="#ead7c4", highlightthickness=1,
-                        padx=_px(16), pady=_px(18), cursor="hand2")
-        card.grid(row=0, column=col, sticky="nsew", padx=_px(7), pady=_px(3))
-        tk.Label(card, text=icon,
-                 font=(FONT_EMOJI, _fs(34 if small else 44), "bold"),
-                 bg="#ffffff", fg="#8a4b22",
-                 cursor="hand2").pack(pady=(0, _px(10)))
-        tk.Label(card, text=title,
-                 font=(FONT_UI, _fs(15 if small else 18), "bold"),
-                 bg="#ffffff", fg="#2b2118").pack()
-        tk.Label(card, text=desc,
-                 font=(FONT_UI, _fs(10 if small else 11)),
-                 bg="#ffffff", fg="#7c5f45",
-                 wraplength=max(120, (pw - 120) // 2),
-                 justify="center").pack(pady=(_px(8), _px(12)))
-        tk.Label(card, text=">",
-                 font=(FONT_UI, _fs(26), "bold"),
-                 bg="#ffffff", fg="#8a4b22").pack()
+                        padx=_px(10 if small else 16),
+                        pady=_px(8 if small else 18), cursor="hand2")
+        card.grid(row=row, column=col, sticky="nsew",
+                  padx=_px(4 if small else 7), pady=_px(3))
+
+        if single_col:
+            card.columnconfigure(1, weight=1)
+            tk.Label(card, text=icon,
+                     font=(FONT_EMOJI, _fs(24), "bold"),
+                     bg="#ffffff", fg="#8a4b22",
+                     cursor="hand2").grid(row=0, column=0, rowspan=2, padx=(0, _px(10)))
+            tk.Label(card, text=title,
+                     font=(FONT_UI, _fs(13), "bold"),
+                     bg="#ffffff", fg="#2b2118").grid(row=0, column=1, sticky="w")
+            tk.Label(card, text=desc,
+                     font=(FONT_UI, _fs(9)),
+                     bg="#ffffff", fg="#7c5f45",
+                     wraplength=max(160, pw - 170),
+                     justify="left").grid(row=1, column=1, sticky="w", pady=(_px(2), 0))
+            tk.Label(card, text=">",
+                     font=(FONT_UI, _fs(18), "bold"),
+                     bg="#ffffff", fg="#8a4b22").grid(row=0, column=2, rowspan=2, padx=(_px(8), 0))
+        else:
+            tk.Label(card, text=icon,
+                     font=(FONT_EMOJI, _fs(28 if small else 44), "bold"),
+                     bg="#ffffff", fg="#8a4b22",
+                     cursor="hand2").pack(pady=(0, _px(6 if small else 10)))
+            tk.Label(card, text=title,
+                     font=(FONT_UI, _fs(13 if small else 18), "bold"),
+                     bg="#ffffff", fg="#2b2118").pack()
+            tk.Label(card, text=desc,
+                     font=(FONT_UI, _fs(9 if small else 11)),
+                     bg="#ffffff", fg="#7c5f45",
+                     wraplength=max(120, (pw - 120) // 2),
+                     justify="center").pack(pady=(_px(5 if small else 8), _px(7 if small else 12)))
+            tk.Label(card, text=">",
+                     font=(FONT_UI, _fs(18 if small else 26), "bold"),
+                     bg="#ffffff", fg="#8a4b22").pack()
 
         for child in (card, *card.winfo_children()):
             child.bind("<Button-1>", lambda _e, t=title: _select(t))
@@ -2717,7 +2788,7 @@ def show_payment_method_popup(root: tk.Tk, on_paid: "callable") -> None:
     owner = _popup_owner(root)
     popup = tk.Toplevel(owner)
     popup.title("결제수단 선택")
-    popup.resizable(False, False)
+    popup.resizable(True, True)
     popup.configure(bg="#f7f9fc")
     _setup_modal_popup(popup, owner)
 
@@ -2727,8 +2798,8 @@ def show_payment_method_popup(root: tk.Tk, on_paid: "callable") -> None:
     if base_w <= 1 or base_h <= 1:
         base_w = owner.winfo_screenwidth()
         base_h = owner.winfo_screenheight()
-    pw = max(360, min(820, base_w - 24))
-    ph = max(360, min(560, base_h - 24))
+    pw = max(340, min(820, base_w - 12))
+    ph = max(300, min(560, base_h - 12))
     _center_popup_on_owner(popup, owner, pw, ph)
     show_payment_method_popup._popup = popup
 
@@ -2744,68 +2815,89 @@ def show_payment_method_popup(root: tk.Tk, on_paid: "callable") -> None:
 
     total_qty = sum(i["qty"] for i in order_list)
     total_price = sum(i["price"] * i["qty"] for i in order_list)
-    small = ph < 520
+    small = ph < 520 or pw < 720
+    very_small = ph < 440 or pw < 560
 
-    footer = tk.Frame(popup, bg="#eef2f7", pady=_px(8 if small else 10))
+    footer = tk.Frame(popup, bg="#eef2f7", pady=_px(5 if small else 10))
     footer.pack(fill="x", side="bottom")
     tk.Button(footer, text="취소",
-              font=(FONT_UI, _fs(11 if small else 12), "bold"),
+              font=(FONT_UI, _fs(10 if small else 12), "bold"),
               bg="#ffffff", fg="#374151",
               activebackground="#e5e7eb", activeforeground="#111827",
-              relief="flat", padx=_px(28), pady=_px(6 if small else 8), cursor="hand2",
+              relief="flat", padx=_px(22 if small else 28),
+              pady=_px(4 if small else 8), cursor="hand2",
               command=_close).pack()
 
-    outer = tk.Frame(popup, bg="#f7f9fc", padx=_px(20), pady=_px(14))
-    outer.pack(fill="both", expand=True)
+    outer = _scrollable_popup_body(
+        popup, "#f7f9fc",
+        padx=_px(10 if small else 20),
+        pady=_px(6 if small else 14),
+    )
 
     tk.Label(outer, text="💳 결제수단을 선택해 주세요",
-             font=(FONT_UI, _fs(20 if small else 26), "bold"),
-             bg="#f7f9fc", fg="#111827").pack()
+             font=(FONT_UI, _fs(17 if small else 26), "bold"),
+             bg="#f7f9fc", fg="#111827",
+             wraplength=max(260, pw - 70),
+             justify="center").pack()
 
     tk.Label(outer, text="원하시는 결제수단을 선택하면 주문이 확정됩니다.",
-             font=(FONT_UI, _fs(10 if small else 12)),
-             bg="#f7f9fc", fg="#6b7280").pack(pady=(_px(4), _px(10)))
+             font=(FONT_UI, _fs(9 if small else 12)),
+             bg="#f7f9fc", fg="#6b7280",
+             wraplength=max(260, pw - 70),
+             justify="center").pack(pady=(_px(2 if small else 4), _px(6 if small else 10)))
 
     summary = tk.Frame(outer, bg="#ffffff", highlightbackground="#dde3ec",
-                       highlightthickness=1, padx=_px(12), pady=_px(8))
-    summary.pack(fill="x", pady=(0, _px(12)))
+                       highlightthickness=1,
+                       padx=_px(8 if small else 12),
+                       pady=_px(5 if small else 8))
+    summary.pack(fill="x", pady=(0, _px(6 if small else 12)))
 
     tk.Label(summary, text="주문 내역",
-             font=(FONT_UI, _fs(11), "bold"),
+             font=(FONT_UI, _fs(9 if small else 11), "bold"),
              bg="#ffffff", fg="#111827").pack(anchor="w")
 
     item_box = tk.Frame(summary, bg="#ffffff")
-    item_box.pack(fill="x", pady=(_px(4), _px(4)))
+    item_box.pack(fill="x", pady=(_px(2 if small else 4), _px(2 if small else 4)))
 
-    max_rows = 4 if small else 6
-    for item in order_list[:max_rows]:
-        opt = item.get("option", "")
-        label = f"{item['name']}({opt})" if opt else item["name"]
-        sub = item["price"] * item["qty"]
-        row = tk.Frame(item_box, bg="#ffffff")
-        row.pack(fill="x", pady=1)
-        tk.Label(row, text=label,
+    max_rows = 0 if very_small else (2 if small else 6)
+    if max_rows == 0:
+        first = order_list[0]
+        opt = first.get("option", "")
+        label = f"{first['name']}({opt})" if opt else first["name"]
+        more = f" 외 {len(order_list) - 1}개" if len(order_list) > 1 else ""
+        tk.Label(item_box, text=f"{label}{more}",
                  font=(FONT_UI, _fs(9)),
-                 bg="#ffffff", fg="#374151", anchor="w").pack(side="left", fill="x", expand=True)
-        tk.Label(row, text=f"x{item['qty']}",
-                 font=(FONT_MONO, _fs(9)),
-                 bg="#ffffff", fg="#374151", width=4).pack(side="left")
-        tk.Label(row, text=f"{sub:,}원",
-                 font=(FONT_MONO, _fs(9)),
-                 bg="#ffffff", fg="#111827", width=10, anchor="e").pack(side="right")
+                 bg="#ffffff", fg="#374151",
+                 anchor="w").pack(fill="x")
+    else:
+        for item in order_list[:max_rows]:
+            opt = item.get("option", "")
+            label = f"{item['name']}({opt})" if opt else item["name"]
+            sub = item["price"] * item["qty"]
+            row = tk.Frame(item_box, bg="#ffffff")
+            row.pack(fill="x", pady=1)
+            tk.Label(row, text=label,
+                     font=(FONT_UI, _fs(8 if small else 9)),
+                     bg="#ffffff", fg="#374151", anchor="w").pack(side="left", fill="x", expand=True)
+            tk.Label(row, text=f"x{item['qty']}",
+                     font=(FONT_MONO, _fs(8 if small else 9)),
+                     bg="#ffffff", fg="#374151", width=4).pack(side="left")
+            tk.Label(row, text=f"{sub:,}원",
+                     font=(FONT_MONO, _fs(8 if small else 9)),
+                     bg="#ffffff", fg="#111827", width=10, anchor="e").pack(side="right")
 
-    if len(order_list) > max_rows:
-        tk.Label(item_box, text=f"외 {len(order_list) - max_rows}개 항목",
-                 font=(FONT_UI, _fs(9)),
-                 bg="#ffffff", fg="#6b7280", anchor="w").pack(fill="x")
+        if len(order_list) > max_rows:
+            tk.Label(item_box, text=f"외 {len(order_list) - max_rows}개 항목",
+                     font=(FONT_UI, _fs(8 if small else 9)),
+                     bg="#ffffff", fg="#6b7280", anchor="w").pack(fill="x")
 
     total_row = tk.Frame(summary, bg="#ffffff")
     total_row.pack(fill="x", pady=(_px(4), 0))
     tk.Label(total_row, text=f"총 수량 {total_qty}개",
-             font=(FONT_UI, _fs(10), "bold"),
+             font=(FONT_UI, _fs(9 if small else 10), "bold"),
              bg="#ffffff", fg="#6b7280").pack(side="left")
     tk.Label(total_row, text=f"합계  {total_price:,}원",
-             font=(FONT_UI, _fs(13), "bold"),
+             font=(FONT_UI, _fs(11 if small else 13), "bold"),
              bg="#ffffff", fg="#2563eb").pack(side="right")
 
     methods = [
@@ -2816,30 +2908,51 @@ def show_payment_method_popup(root: tk.Tk, on_paid: "callable") -> None:
 
     cards = tk.Frame(outer, bg="#f7f9fc")
     cards.pack(fill="both", expand=True)
-    for col in range(3):
+    pay_cols = 1 if very_small else 3
+    for col in range(pay_cols):
         cards.columnconfigure(col, weight=1, uniform="pay")
-    cards.rowconfigure(0, weight=1)
 
-    for col, (icon, title, desc) in enumerate(methods):
+    for idx, (icon, title, desc) in enumerate(methods):
+        row = idx // pay_cols
+        col = idx % pay_cols
+        cards.rowconfigure(row, weight=1)
         card = tk.Frame(cards, bg="#ffffff",
                         highlightbackground="#d9e0ea", highlightthickness=1,
                         padx=_px(8 if small else 12),
-                        pady=_px(8 if small else 12), cursor="hand2")
-        card.grid(row=0, column=col, sticky="nsew", padx=_px(5), pady=_px(2))
-        tk.Label(card, text=icon,
-                 font=(FONT_EMOJI, _fs(18 if small else 26), "bold"),
-                 bg="#ffffff", fg="#2563eb").pack(pady=(0, _px(8)))
-        tk.Label(card, text=title,
-                 font=(FONT_UI, _fs(10 if small else 15), "bold"),
-                 bg="#ffffff", fg="#111827").pack()
-        tk.Label(card, text=desc,
-                 font=(FONT_UI, _fs(8 if small else 10)),
-                 bg="#ffffff", fg="#6b7280",
-                 wraplength=max(80, (pw - 120) // 3),
-                 justify="center").pack(pady=(_px(6), _px(10)))
-        tk.Label(card, text=">",
-                 font=(FONT_UI, _fs(18 if small else 24), "bold"),
-                 bg="#ffffff", fg="#2563eb").pack()
+                        pady=_px(7 if small else 12), cursor="hand2")
+        card.grid(row=row, column=col, sticky="nsew",
+                  padx=_px(4 if small else 5), pady=_px(3 if very_small else 2))
+        if pay_cols == 1:
+            card.columnconfigure(1, weight=1)
+            tk.Label(card, text=icon,
+                     font=(FONT_EMOJI, _fs(20), "bold"),
+                     bg="#ffffff", fg="#2563eb").grid(row=0, column=0, rowspan=2, padx=(0, _px(10)))
+            tk.Label(card, text=title,
+                     font=(FONT_UI, _fs(12), "bold"),
+                     bg="#ffffff", fg="#111827").grid(row=0, column=1, sticky="w")
+            tk.Label(card, text=desc,
+                     font=(FONT_UI, _fs(8)),
+                     bg="#ffffff", fg="#6b7280",
+                     wraplength=max(160, pw - 170),
+                     justify="left").grid(row=1, column=1, sticky="w")
+            tk.Label(card, text=">",
+                     font=(FONT_UI, _fs(17), "bold"),
+                     bg="#ffffff", fg="#2563eb").grid(row=0, column=2, rowspan=2, padx=(_px(8), 0))
+        else:
+            tk.Label(card, text=icon,
+                     font=(FONT_EMOJI, _fs(17 if small else 26), "bold"),
+                     bg="#ffffff", fg="#2563eb").pack(pady=(0, _px(4 if small else 8)))
+            tk.Label(card, text=title,
+                     font=(FONT_UI, _fs(9 if small else 15), "bold"),
+                     bg="#ffffff", fg="#111827").pack()
+            tk.Label(card, text=desc,
+                     font=(FONT_UI, _fs(8 if small else 10)),
+                     bg="#ffffff", fg="#6b7280",
+                     wraplength=max(80, (pw - 120) // 3),
+                     justify="center").pack(pady=(_px(3 if small else 6), _px(5 if small else 10)))
+            tk.Label(card, text=">",
+                     font=(FONT_UI, _fs(15 if small else 24), "bold"),
+                     bg="#ffffff", fg="#2563eb").pack()
 
         for child in (card, *card.winfo_children()):
             child.bind("<Button-1>", lambda _e, m=title: _select(m))
