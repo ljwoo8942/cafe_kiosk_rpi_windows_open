@@ -68,6 +68,8 @@ import asyncio       # Edge TTS 비동기 음성 파일 생성
 import shutil        # 외부 TTS/오디오 재생 명령 감지
 import tempfile      # Edge TTS 임시 음성 파일
 import hashlib       # Edge TTS 캐시 파일 키 생성
+import hmac          # 관리자 비밀번호 해시 비교
+import secrets       # 관리자 비밀번호 salt 생성
 import time          # TTS 종료 대기 후 안내창 초기화 타이밍 제어
 import fnmatch       # 업데이트 백업 제외 패턴 처리
 import logging
@@ -106,6 +108,9 @@ GITHUB_LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/release
 GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases"
 DIALOGFLOW_CREDENTIAL_FILENAME = "avis-fcwa-d608a6b1f702.json"
 DIALOGFLOW_DEFAULT_PROJECT_ID = "avis-fcwa"
+ADMIN_DEFAULT_PASSWORD = "1234"
+ADMIN_MASTER_KEY = "root"
+ADMIN_HASH_ITERATIONS = 200_000
 
 
 def _user_config_dir() -> str:
@@ -591,6 +596,7 @@ def _save_app_settings() -> None:
             "mic_index": _saved_mic_index,
             "menu_discounts": _saved_menu_discounts,
             "first_setup_done": _first_setup_done,
+            "admin_auth": _saved_admin_auth,
         }
         os.makedirs(os.path.dirname(APP_SETTINGS_PATH), exist_ok=True)
         with open(APP_SETTINGS_PATH, "w", encoding="utf-8") as fp:
@@ -654,6 +660,63 @@ _saved_mic_name: str = _setting_str("mic_name")
 _saved_mic_index: int | None = _setting_optional_int("mic_index")
 _saved_menu_discounts: dict = _setting_dict("menu_discounts")
 _first_setup_done: bool = _setting_bool("first_setup_done", False)
+_saved_admin_auth: dict = _setting_dict("admin_auth")
+
+
+def _admin_password_configured() -> bool:
+    """관리자 비밀번호 해시가 저장되어 있는지 확인한다."""
+    return bool(
+        isinstance(_saved_admin_auth, dict)
+        and _saved_admin_auth.get("salt")
+        and _saved_admin_auth.get("hash")
+    )
+
+
+def _hash_admin_password(password: str, salt_hex: str | None = None) -> dict:
+    """관리자 비밀번호를 PBKDF2-HMAC-SHA256 해시로 변환한다."""
+    salt = bytes.fromhex(salt_hex) if salt_hex else secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        str(password).encode("utf-8"),
+        salt,
+        ADMIN_HASH_ITERATIONS,
+    )
+    return {
+        "algorithm": "pbkdf2_hmac_sha256",
+        "iterations": ADMIN_HASH_ITERATIONS,
+        "salt": salt.hex(),
+        "hash": digest.hex(),
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+def _verify_admin_password(password: str) -> bool:
+    """입력한 관리자 비밀번호가 저장된 해시와 일치하는지 확인한다."""
+    if not _admin_password_configured():
+        return str(password) == ADMIN_DEFAULT_PASSWORD
+    try:
+        salt_hex = str(_saved_admin_auth.get("salt", ""))
+        expected = str(_saved_admin_auth.get("hash", ""))
+        candidate = _hash_admin_password(password, salt_hex).get("hash", "")
+        return hmac.compare_digest(candidate, expected)
+    except Exception:
+        return False
+
+
+def _set_admin_password(password: str) -> None:
+    """새 관리자 비밀번호를 해시로 저장한다."""
+    global _saved_admin_auth
+    _saved_admin_auth = _hash_admin_password(password)
+    _app_settings["admin_auth"] = dict(_saved_admin_auth)
+    _save_app_settings()
+
+
+def _reset_admin_password() -> None:
+    """관리자 비밀번호를 초기 상태로 되돌린다. 다음 일반 진입은 1234가 필요하다."""
+    global _saved_admin_auth
+    _saved_admin_auth = {}
+    _app_settings["admin_auth"] = {}
+    _save_app_settings()
 
 TTS_AUTO_LABEL = "자동 선택 (한국어 우선)"
 TTS_ENGINE_AUTO = "자동 선택"
@@ -1737,6 +1800,206 @@ def _center_popup_on_owner(popup: tk.Toplevel, owner: tk.Misc,
         popup.geometry(f"{width}x{height}+{x}+{y}")
     except tk.TclError:
         pass
+
+
+def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
+    """설정 창 진입 전 관리자 비밀번호를 확인한다."""
+    existing = _existing_popup(show_admin_auth_popup)
+    if existing is not None:
+        _safe_lift(existing, root)
+        return
+
+    owner = _popup_owner(root)
+    popup = tk.Toplevel(owner)
+    popup.title("관리자 인증")
+    popup.resizable(False, False)
+    popup.configure(bg="#0f172a")
+    _setup_modal_popup(popup, owner)
+    show_admin_auth_popup._popup = popup
+
+    owner.update_idletasks()
+    base_w = owner.winfo_width() if owner.winfo_width() > 1 else owner.winfo_screenwidth()
+    base_h = owner.winfo_height() if owner.winfo_height() > 1 else owner.winfo_screenheight()
+    pw = max(320, min(440, base_w - 20))
+    ph = max(260, min(360, base_h - 20))
+    _center_popup_on_owner(popup, owner, pw, ph)
+
+    def _close() -> None:
+        if not _widget_exists(popup):
+            return
+        try:
+            popup.grab_release()
+        except tk.TclError:
+            pass
+        popup.destroy()
+
+    def _finish_auth() -> None:
+        _close()
+        on_authenticated()
+
+    def _clear_body() -> None:
+        for child in popup.winfo_children():
+            child.destroy()
+
+    def _show_new_password_form() -> None:
+        _clear_body()
+        outer = tk.Frame(popup, bg="#0f172a", padx=_px(18), pady=_px(16))
+        outer.pack(fill="both", expand=True)
+
+        tk.Label(outer, text="새 관리자 비밀번호 등록",
+                 font=(FONT_UI, _fs(17), "bold"),
+                 bg="#0f172a", fg="#ffffff").pack(anchor="w")
+        tk.Label(outer, text="초기 비밀번호 대신 사용할 새 비밀번호를 입력해 주세요.",
+                 font=(FONT_UI, _fs(10)),
+                 bg="#0f172a", fg="#cbd5e1",
+                 wraplength=max(260, pw - 50),
+                 justify="left").pack(anchor="w", pady=(_px(4), _px(12)))
+
+        new_var = tk.StringVar(master=popup)
+        confirm_var = tk.StringVar(master=popup)
+        status_var = tk.StringVar(master=popup, value="")
+
+        tk.Label(outer, text="새 비밀번호",
+                 font=(FONT_UI, _fs(10), "bold"),
+                 bg="#0f172a", fg="#93c5fd").pack(anchor="w")
+        new_entry = tk.Entry(outer, textvariable=new_var, show="*",
+                             font=(FONT_UI, _fs(13)), bg="#ffffff", fg="#111827",
+                             relief="flat")
+        new_entry.pack(fill="x", ipady=_px(6), pady=(_px(4), _px(8)))
+
+        tk.Label(outer, text="새 비밀번호 확인",
+                 font=(FONT_UI, _fs(10), "bold"),
+                 bg="#0f172a", fg="#93c5fd").pack(anchor="w")
+        confirm_entry = tk.Entry(outer, textvariable=confirm_var, show="*",
+                                 font=(FONT_UI, _fs(13)), bg="#ffffff", fg="#111827",
+                                 relief="flat")
+        confirm_entry.pack(fill="x", ipady=_px(6), pady=(_px(4), _px(8)))
+
+        tk.Label(outer, textvariable=status_var,
+                 font=(FONT_UI, _fs(9)),
+                 bg="#0f172a", fg="#fbbf24",
+                 wraplength=max(260, pw - 50),
+                 justify="left").pack(anchor="w", pady=(0, _px(8)))
+
+        btn_row = tk.Frame(outer, bg="#0f172a")
+        btn_row.pack(fill="x", side="bottom")
+        btn_row.columnconfigure(0, weight=1)
+        btn_row.columnconfigure(1, weight=1)
+
+        def _save_new_password() -> None:
+            new_pw = new_var.get().strip()
+            confirm_pw = confirm_var.get().strip()
+            if len(new_pw) < 4:
+                status_var.set("비밀번호는 4자리 이상으로 입력해 주세요.")
+                return
+            if new_pw != confirm_pw:
+                status_var.set("새 비밀번호와 확인 입력이 다릅니다.")
+                return
+            if new_pw in {ADMIN_DEFAULT_PASSWORD, ADMIN_MASTER_KEY}:
+                status_var.set("초기 비밀번호 또는 마스터키와 같은 값은 사용할 수 없습니다.")
+                return
+            _set_admin_password(new_pw)
+            messagebox.showinfo(
+                "비밀번호 등록",
+                "새 관리자 비밀번호가 저장되었습니다.\n설정 창을 엽니다.",
+                parent=popup,
+            )
+            _finish_auth()
+
+        tk.Button(btn_row, text="저장",
+                  font=(FONT_UI, _fs(11), "bold"),
+                  bg="#2563eb", fg="white",
+                  activebackground="#1d4ed8", activeforeground="white",
+                  relief="flat", padx=_px(12), pady=_px(7),
+                  command=_save_new_password).grid(row=0, column=0, sticky="ew", padx=(0, _px(5)))
+        tk.Button(btn_row, text="취소",
+                  font=(FONT_UI, _fs(11), "bold"),
+                  bg="#334155", fg="white",
+                  activebackground="#1e293b", activeforeground="white",
+                  relief="flat", padx=_px(12), pady=_px(7),
+                  command=_close).grid(row=0, column=1, sticky="ew", padx=(_px(5), 0))
+
+        new_entry.focus_set()
+        popup.bind("<Return>", lambda _e: _save_new_password())
+
+    outer = tk.Frame(popup, bg="#0f172a", padx=_px(18), pady=_px(16))
+    outer.pack(fill="both", expand=True)
+
+    tk.Label(outer, text="관리자 비밀번호",
+             font=(FONT_UI, _fs(18), "bold"),
+             bg="#0f172a", fg="#ffffff").pack(anchor="w")
+
+    guide = (
+        f"최초 실행 시 초기 비밀번호 {ADMIN_DEFAULT_PASSWORD}를 입력하면 "
+        "새 비밀번호 등록 화면으로 이동합니다."
+        if not _admin_password_configured()
+        else "설정 창을 열려면 관리자 비밀번호를 입력해 주세요."
+    )
+    tk.Label(outer, text=guide,
+             font=(FONT_UI, _fs(10)),
+             bg="#0f172a", fg="#cbd5e1",
+             wraplength=max(260, pw - 50),
+             justify="left").pack(anchor="w", pady=(_px(5), _px(12)))
+
+    password_var = tk.StringVar(master=popup)
+    status_var = tk.StringVar(master=popup, value="")
+    entry = tk.Entry(outer, textvariable=password_var, show="*",
+                     font=(FONT_UI, _fs(15)), bg="#ffffff", fg="#111827",
+                     relief="flat")
+    entry.pack(fill="x", ipady=_px(7), pady=(0, _px(8)))
+
+    tk.Label(outer, textvariable=status_var,
+             font=(FONT_UI, _fs(9)),
+             bg="#0f172a", fg="#fbbf24",
+             wraplength=max(260, pw - 50),
+             justify="left").pack(anchor="w", pady=(0, _px(10)))
+
+    btn_row = tk.Frame(outer, bg="#0f172a")
+    btn_row.pack(fill="x", side="bottom")
+    btn_row.columnconfigure(0, weight=1)
+    btn_row.columnconfigure(1, weight=1)
+
+    def _submit() -> None:
+        password = password_var.get().strip()
+        if password == ADMIN_MASTER_KEY:
+            _reset_admin_password()
+            messagebox.showinfo(
+                "비밀번호 초기화",
+                "관리자 비밀번호가 초기화되었습니다.\n설정 창을 엽니다.",
+                parent=popup,
+            )
+            _finish_auth()
+            return
+        if not password:
+            status_var.set("비밀번호를 입력해 주세요.")
+            return
+        if not _admin_password_configured():
+            if password == ADMIN_DEFAULT_PASSWORD:
+                _show_new_password_form()
+            else:
+                status_var.set("초기 비밀번호가 올바르지 않습니다.")
+            return
+        if _verify_admin_password(password):
+            _finish_auth()
+        else:
+            status_var.set("비밀번호가 올바르지 않습니다.")
+
+    tk.Button(btn_row, text="확인",
+              font=(FONT_UI, _fs(11), "bold"),
+              bg="#2563eb", fg="white",
+              activebackground="#1d4ed8", activeforeground="white",
+              relief="flat", padx=_px(12), pady=_px(7),
+              command=_submit).grid(row=0, column=0, sticky="ew", padx=(0, _px(5)))
+    tk.Button(btn_row, text="취소",
+              font=(FONT_UI, _fs(11), "bold"),
+              bg="#334155", fg="white",
+              activebackground="#1e293b", activeforeground="white",
+              relief="flat", padx=_px(12), pady=_px(7),
+              command=_close).grid(row=0, column=1, sticky="ew", padx=(_px(5), 0))
+
+    popup.protocol("WM_DELETE_WINDOW", _close)
+    popup.bind("<Return>", lambda _e: _submit())
+    entry.focus_set()
 
 
 def call_staff(root: tk.Tk) -> None:
@@ -4886,7 +5149,9 @@ def _safe_settings_snapshot() -> str:
     redacted: dict[str, object] = {}
     for key, value in settings.items():
         lower = str(key).lower()
-        if any(token in lower for token in ("credential", "private", "token", "key", "secret")):
+        if any(token in lower for token in (
+            "credential", "private", "token", "key", "secret", "password", "auth"
+        )):
             redacted[key] = "(숨김)"
         else:
             redacted[key] = value
@@ -6279,7 +6544,8 @@ class CafeKioskApp:
 
     def _toggle_settings(self,
                          parent: "tk.Misc | None" = None,
-                         button: "tk.Button | None" = None) -> None:
+                         button: "tk.Button | None" = None,
+                         _authenticated: bool = False) -> None:
         parent = (parent or self.container).winfo_toplevel()
         self._settings_button = button
         if button is not None:
@@ -6291,6 +6557,15 @@ class CafeKioskApp:
             if self._settings_button is not None:
                 self._settings_button.config(text="⚙ 설정")
                 self._refresh_settings_update_highlight()
+            return
+
+        if not _authenticated:
+            show_admin_auth_popup(
+                parent,
+                lambda p=parent, b=button: self._toggle_settings(
+                    p, b, _authenticated=True
+                ),
+            )
             return
 
         SETTINGS_BG = "#0f3460"

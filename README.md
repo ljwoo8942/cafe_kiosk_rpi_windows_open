@@ -17,19 +17,19 @@ Raspberry Pi에서는 `xrandr`로 연결된 모니터 크기와 위치를 감지
 
 최신 설치 파일은 GitHub Releases에서 받을 수 있습니다. 일반 사용자는 아래 파일만 다운로드하면 됩니다.
 
-- Windows: [CafeKiosk-Windows-Setup-1.2.2.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.2.2/CafeKiosk-Windows-Setup-1.2.2.exe)
-- Raspberry Pi 더블클릭 설치: [CafeKiosk-RPi-Installer-1.2.2.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.2.2/CafeKiosk-RPi-Installer-1.2.2.zip)
-- Raspberry Pi 직접 설치: [cafe-kiosk-rpi_1.2.2_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.2.2/cafe-kiosk-rpi_1.2.2_all.deb)
-- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.2.2.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.2.2/CafeKiosk-Windows-Portable-1.2.2.zip)
+- Windows: [CafeKiosk-Windows-Setup-1.2.3.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.2.3/CafeKiosk-Windows-Setup-1.2.3.exe)
+- Raspberry Pi 더블클릭 설치: [CafeKiosk-RPi-Installer-1.2.3.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.2.3/CafeKiosk-RPi-Installer-1.2.3.zip)
+- Raspberry Pi 직접 설치: [cafe-kiosk-rpi_1.2.3_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.2.3/cafe-kiosk-rpi_1.2.3_all.deb)
+- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.2.3.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.2.3/CafeKiosk-Windows-Portable-1.2.3.zip)
 
 릴리즈 페이지:
-[Cafe Kiosk v1.2.2](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.2.2)
+[Cafe Kiosk v1.2.3](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.2.3)
 
 ## 설치 방법
 
 Windows:
 
-1. `CafeKiosk-Windows-Setup-1.2.2.exe`를 다운로드합니다.
+1. `CafeKiosk-Windows-Setup-1.2.3.exe`를 다운로드합니다.
 2. 설치 파일을 실행합니다.
 3. 설치가 끝나면 바탕화면의 `BEAN & BREW Cafe Kiosk` 바로가기로 실행합니다.
 
@@ -45,7 +45,7 @@ Windows 삭제:
 
 Raspberry Pi / Linux 더블클릭 설치:
 
-1. `CafeKiosk-RPi-Installer-1.2.2.zip`을 다운로드합니다.
+1. `CafeKiosk-RPi-Installer-1.2.3.zip`을 다운로드합니다.
 2. 압축을 풉니다.
 3. `설치하기.desktop` 파일을 더블클릭합니다.
 4. 실행 허용 또는 신뢰 확인 창이 뜨면 허용합니다.
@@ -57,11 +57,11 @@ Raspberry Pi / Linux 더블클릭 설치:
 
 Raspberry Pi / Linux 직접 설치:
 
-1. `cafe-kiosk-rpi_1.2.2_all.deb`를 다운로드합니다.
+1. `cafe-kiosk-rpi_1.2.3_all.deb`를 다운로드합니다.
 2. 파일이 있는 폴더에서 아래 명령을 실행합니다.
 
 ```bash
-sudo apt install ./cafe-kiosk-rpi_1.2.2_all.deb
+sudo apt install ./cafe-kiosk-rpi_1.2.3_all.deb
 cafe-kiosk
 ```
 
@@ -316,7 +316,17 @@ Dialogflow를 사용하려면 Google Cloud 서비스 계정 JSON 파일이 필�
 
 ## 관리자 기능
 
-설정 창에서 다음 기능을 사용할 수 있습니다.
+설정 버튼을 누르면 관리자 비밀번호를 입력해야 설정 창으로 들어갈 수 있습니다.
+
+- 초기 비밀번호: `1234`
+- 최초로 `1234`를 입력하면 바로 새 관리자 비밀번호를 등록해야 합니다.
+- 새 비밀번호는 평문으로 저장하지 않고 PBKDF2-HMAC-SHA256 해시와 salt로 저장됩니다.
+- 마스터키: `root`
+- 비밀번호 입력란에 `root`를 입력하면 관리자 비밀번호가 초기화되고 설정 창에 진입할 수 있습니다.
+
+마스터키는 설치 사용자가 비밀번호를 잊었을 때 복구하기 위한 공개 복구키입니다. 공개 저장소에 포함되어 있으므로, 강한 보안 잠금이 필요한 운영 환경에서는 별도 관리 정책을 적용하는 것을 권장합니다.
+
+설정 창에서는 다음 기능을 사용할 수 있습니다.
 
 - TTS 볼륨 / 속도 / 피치 조절
 - TTS 엔진과 음성 선택
