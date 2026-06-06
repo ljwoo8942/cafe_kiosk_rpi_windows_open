@@ -111,6 +111,8 @@ DIALOGFLOW_DEFAULT_PROJECT_ID = "avis-fcwa"
 ADMIN_DEFAULT_PASSWORD = "1234"
 ADMIN_MASTER_KEY = "root"
 ADMIN_HASH_ITERATIONS = 200_000
+SESSION_IDLE_TIMEOUT_MS = 90_000
+SESSION_IDLE_CHECK_INTERVAL_MS = 5_000
 
 
 def _user_config_dir() -> str:
@@ -1715,6 +1717,55 @@ def _existing_popup(func: "callable") -> "tk.Toplevel | None":
         except Exception:
             pass
     return None
+
+
+_SESSION_ORDER_POPUP_NAMES = (
+    "show_recommendation_popup",
+    "ask_hot_ice",
+    "ask_size_option",
+    "ask_shot_option",
+    "show_empty_cart_notice",
+    "show_order_type_popup",
+    "show_final_order_confirm_popup",
+    "show_payment_method_popup",
+    "show_payment_wait_popup",
+    "show_receipt_issue_popup",
+)
+
+
+def _session_order_popup_open() -> bool:
+    """주문 흐름에 속한 팝업이 하나라도 열려 있는지 확인한다."""
+    for name in _SESSION_ORDER_POPUP_NAMES:
+        func = globals().get(name)
+        if callable(func) and _existing_popup(func) is not None:
+            return True
+    return False
+
+
+def close_session_order_popups() -> int:
+    """세션 초기화 시 주문 관련 팝업을 모두 닫고 닫은 개수를 반환한다."""
+    closed = 0
+    for name in _SESSION_ORDER_POPUP_NAMES:
+        func = globals().get(name)
+        if not callable(func):
+            continue
+        popup = _existing_popup(func)
+        if popup is None:
+            continue
+        try:
+            popup.grab_release()
+        except tk.TclError:
+            pass
+        try:
+            popup.destroy()
+            closed += 1
+        except tk.TclError:
+            pass
+        try:
+            setattr(func, "_popup", None)
+        except Exception:
+            pass
+    return closed
 
 
 def _once_callback(callback: "callable") -> "callable":
@@ -4207,7 +4258,7 @@ def _current_app_version() -> str:
 
 
 def _parse_version_tuple(value: str) -> tuple[int, ...]:
-    """v1.2.3 형태의 문자열을 비교 가능한 숫자 튜플로 변환한다."""
+    """v1.2.x 형태의 문자열을 비교 가능한 숫자 튜플로 변환한다."""
     text = str(value or "").strip().lower()
     if text.startswith("v"):
         text = text[1:]
@@ -6164,6 +6215,10 @@ class CafeKioskApp:
         self._update_check_started = False
         self._update_notice: dict | None = None
         self._payment_confirm_pending = False
+        self._session_idle_job = None
+        self._session_resetting = False
+        self._session_activity_bound = False
+        self._last_session_activity = time.monotonic()
         self._update_status_label = None
         self._first_setup_window = None
         self._runtime_check_window = None
@@ -6175,6 +6230,114 @@ class CafeKioskApp:
         self.root.after(0, self._startup_greeting)
         self.root.after(1800, self._show_first_setup_wizard_if_needed)
         self.root.after(3500, self._start_background_update_check)
+        self.root.after(1200, self._install_session_activity_bindings)
+        self.root.after(SESSION_IDLE_CHECK_INTERVAL_MS, self._check_session_idle)
+
+    def _install_session_activity_bindings(self) -> None:
+        """터치/키보드/마우스 입력을 세션 활동으로 기록한다."""
+        if self._session_activity_bound:
+            return
+        self._session_activity_bound = True
+
+        def _activity(_event=None) -> None:
+            self._mark_session_activity("gui")
+
+        self._session_activity_callback = _activity
+        for sequence in ("<ButtonPress>", "<KeyPress>", "<MouseWheel>", "<Button-4>", "<Button-5>"):
+            try:
+                self.root.bind_all(sequence, _activity, add="+")
+            except tk.TclError:
+                pass
+
+    def _mark_session_activity(self, _source: str = "") -> None:
+        """사용자 입력 시점을 기록하고, 주문 완료 후 안내 초기화 대기를 즉시 처리한다."""
+        if self._session_resetting:
+            return
+        self._last_session_activity = time.monotonic()
+        if threading.current_thread() is threading.main_thread():
+            self._reset_log_for_new_interaction()
+        else:
+            try:
+                self.root.after(0, self._reset_log_for_new_interaction)
+            except tk.TclError:
+                pass
+
+    def _has_active_session(self) -> bool:
+        """초기화할 만한 진행 중 주문/대화/팝업이 있는지 판단한다."""
+        return (
+            bool(order_list)
+            or self.state != self.STATE_ORDERING
+            or self._pending_ambiguous_choices is not None
+            or self._pending_voice_order is not None
+            or self._voice_checkout_order_type is not None
+            or self._payment_confirm_pending
+            or _session_order_popup_open()
+        )
+
+    def _check_session_idle(self) -> None:
+        """주문 중 방치된 세션을 주기적으로 초기화한다."""
+        self._session_idle_job = None
+        try:
+            if not self._session_resetting and not self.is_listening and self._has_active_session():
+                idle_ms = int((time.monotonic() - self._last_session_activity) * 1000)
+                if idle_ms >= SESSION_IDLE_TIMEOUT_MS:
+                    self._reset_session_due_to_idle(idle_ms)
+        except Exception as exc:
+            log_error_event(f"Session idle check failed: {exc}")
+        finally:
+            if _widget_exists(self.root):
+                try:
+                    self._session_idle_job = self.root.after(
+                        SESSION_IDLE_CHECK_INTERVAL_MS,
+                        self._check_session_idle,
+                    )
+                except tk.TclError:
+                    self._session_idle_job = None
+
+    def _reset_session_due_to_idle(self, idle_ms: int) -> None:
+        """장시간 입력이 없으면 장바구니와 주문 진행 상태를 안전하게 초기화한다."""
+        if self._session_resetting:
+            return
+        self._session_resetting = True
+        had_cart = bool(order_list)
+        had_voice_state = (
+            self.state != self.STATE_ORDERING
+            or self._pending_ambiguous_choices is not None
+            or self._pending_voice_order is not None
+            or self._voice_checkout_order_type is not None
+        )
+
+        try:
+            closed_popups = close_session_order_popups()
+            order_list.clear()
+            self.state = self.STATE_ORDERING
+            self._pending_ambiguous_choices = None
+            self._pending_ambiguous_text = ""
+            self._pending_voice_order = None
+            self._voice_checkout_order_type = None
+            self._payment_confirm_pending = False
+            self._cancel_log_reset_after_tts()
+            self._reset_log_on_next_interaction = False
+            self._log_reset_generation += 1
+            self.on_order_change()
+            self.reset_log()
+            self.set_status("준비 완료 - 메뉴를 터치하거나 말하기 버튼을 누르세요")
+            self._last_session_activity = time.monotonic()
+            log_app_event(
+                f"Session auto reset after {idle_ms // 1000}s idle "
+                f"(cart={had_cart}, voice_state={had_voice_state}, popups={closed_popups})"
+            )
+            if had_cart or had_voice_state:
+                self.log("\n⏱  입력이 없어 주문을 자동 초기화했습니다.")
+                _speak_if_idle("입력이 없어 주문을 초기화했습니다. 처음부터 다시 주문해 주세요.")
+        finally:
+            def _release_reset_guard() -> None:
+                self._session_resetting = False
+
+            try:
+                self.root.after(700, _release_reset_guard)
+            except tk.TclError:
+                self._session_resetting = False
 
     # ──────────────────────────────────────────────────
     # 7-1  UI 빌드 (container 에 모든 위젯 배치)
@@ -7187,7 +7350,7 @@ class CafeKioskApp:
 
     def _on_menu_touch(self, name: str, price: int) -> None:
         """메뉴판 버튼 터치: 디저트는 바로 담고, 음료는 온도/사이즈 팝업 후 담는다."""
-        self._reset_log_for_new_interaction()
+        self._mark_session_activity("menu_touch")
         if is_sold_out(name):
             self.log(f"\n⚠️  {name}은 현재 품절입니다.")
             speak(f"{name}은 현재 품절입니다. 다른 메뉴를 선택해 주세요.")
@@ -7226,6 +7389,7 @@ class CafeKioskApp:
 
     def _on_cart_add(self, name: str, price: int, option: str = "") -> None:
         """장바구니 [+] 버튼: 같은 옵션으로 수량 1 증가 (핫/아이스 팝업 없이)."""
+        self._mark_session_activity("cart_add")
         def _do():
             if add_to_order_by_name(name, price, option):
                 self.on_order_change()
@@ -7236,6 +7400,7 @@ class CafeKioskApp:
 
     def _on_cart_edit(self, index: int) -> None:
         """장바구니 항목 클릭: 해당 메뉴의 옵션을 다시 선택한다."""
+        self._mark_session_activity("cart_edit")
         if index < 0 or index >= len(order_list):
             return
 
@@ -7260,6 +7425,7 @@ class CafeKioskApp:
 
     def _on_cart_remove(self, name: str, option: str = "") -> None:
         """장바구니 [-] 버튼: 수량 1 감소 (0이면 항목 삭제)."""
+        self._mark_session_activity("cart_remove")
         def _do():
             remove_one_from_order(name, option)
             self.on_order_change()
@@ -8003,6 +8169,7 @@ class CafeKioskApp:
 
     def _on_listen_click(self) -> None:
         """[🎙 말하기] 버튼: 이미 녹음 중이면 무시, 아니면 음성 처리 스레드 시작."""
+        self._mark_session_activity("listen_click")
         if not SR_AVAILABLE:
             self.log("⚠️  음성 인식 라이브러리 미설치 — 터치 주문을 이용해 주세요.")
             return
@@ -8012,12 +8179,11 @@ class CafeKioskApp:
             return
         if self.is_listening:
             return
-        self._reset_log_for_new_interaction()
         threading.Thread(target=self._listen_and_process, daemon=True).start()
 
     def _btn_confirm(self) -> None:
         """[📋 주문 확인] 버튼 → 이용 방식 선택 후 결제수단 선택 창 표시."""
-        self._reset_log_for_new_interaction()
+        self._mark_session_activity("confirm_button")
         if self._payment_confirm_pending:
             return
         self._payment_confirm_pending = True
@@ -8083,7 +8249,7 @@ class CafeKioskApp:
 
     def _btn_cancel(self) -> None:
         """[❌ 전체 취소] 버튼 → 장바구니 초기화."""
-        self._reset_log_for_new_interaction()
+        self._mark_session_activity("cancel_button")
         def _do():
             order_list.clear()
             self.state = self.STATE_ORDERING
@@ -8103,7 +8269,7 @@ class CafeKioskApp:
 
     def _btn_recommend(self) -> None:
         """[⭐ 추천] 버튼 → 시간대 기반 메뉴 추천 팝업."""
-        self._reset_log_for_new_interaction()
+        self._mark_session_activity("recommend_button")
         recs = get_recommendation("", {})
         self.log(f"\n⭐  추천 메뉴: {', '.join(recs)}")
         speak(f"추천 메뉴는 {', '.join(recs)}입니다.")
@@ -8899,6 +9065,8 @@ class CafeKioskApp:
                     text = self.recognizer.recognize_google(audio, language="ko-KR")
                     self.log(f'📝  인식: "{text}"')
 
+                self._mark_session_activity("voice")
+
                 # 음성 인식 원문을 DB에 로그 저장
                 threading.Thread(
                     target=save_voice_log, args=(text,), daemon=True
@@ -9648,6 +9816,10 @@ class KioskScreen:
     def _notify_user_interaction(self) -> None:
         """2번 키오스크 터치를 1번 안내창의 새 사용자 입력으로 전달한다."""
         if self.settings_controller is None:
+            return
+        mark = getattr(self.settings_controller, "_mark_session_activity", None)
+        if callable(mark):
+            mark("kiosk_touch")
             return
         reset = getattr(self.settings_controller, "_reset_log_for_new_interaction", None)
         if callable(reset):
