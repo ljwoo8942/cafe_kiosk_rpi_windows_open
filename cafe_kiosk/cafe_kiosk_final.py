@@ -6219,6 +6219,7 @@ class CafeKioskApp:
         self._session_resetting = False
         self._session_activity_bound = False
         self._last_session_activity = time.monotonic()
+        self._session_generation = 0
         self._update_status_label = None
         self._first_setup_window = None
         self._runtime_check_window = None
@@ -6274,6 +6275,22 @@ class CafeKioskApp:
             or _session_order_popup_open()
         )
 
+    def _checkout_session_token(self) -> int:
+        """현재 주문 흐름을 식별하는 토큰을 반환한다."""
+        return self._session_generation
+
+    def _is_checkout_session_active(self, token: int) -> bool:
+        """오래된 결제/영수증 콜백이 이미 초기화된 주문을 진행하지 못하게 한다."""
+        return (
+            token == self._session_generation
+            and not self._session_resetting
+            and bool(order_list)
+        )
+
+    def _invalidate_checkout_session(self) -> None:
+        """취소, 자동 초기화, 주문 완료 시 이전 결제 흐름을 모두 무효화한다."""
+        self._session_generation += 1
+
     def _check_session_idle(self) -> None:
         """주문 중 방치된 세션을 주기적으로 초기화한다."""
         self._session_idle_job = None
@@ -6309,6 +6326,7 @@ class CafeKioskApp:
 
         try:
             closed_popups = close_session_order_popups()
+            self._invalidate_checkout_session()
             order_list.clear()
             self.state = self.STATE_ORDERING
             self._pending_ambiguous_choices = None
@@ -8196,24 +8214,47 @@ class CafeKioskApp:
             self.root.after(1200, self._unlock_payment_confirm)
             return
 
+        session_token = self._checkout_session_token()
+
         def _unlock_after_popup() -> None:
             self.root.after(900, self._unlock_payment_confirm)
 
+        def _show_payment_methods(top: tk.Misc, order_type: str) -> None:
+            if not self._is_checkout_session_active(session_token):
+                _unlock_after_popup()
+                return
+
+            def _show_payment_wait(method: str) -> None:
+                if not self._is_checkout_session_active(session_token):
+                    _unlock_after_popup()
+                    return
+                show_payment_wait_popup(
+                    top,
+                    method,
+                    lambda m=method: _show_receipt(m),
+                )
+
+            def _show_receipt(method: str) -> None:
+                if not self._is_checkout_session_active(session_token):
+                    _unlock_after_popup()
+                    return
+                show_receipt_issue_popup(
+                    top,
+                    lambda issue, m=method: self._complete_paid_order(
+                        m, order_type, issue, session_token
+                    ),
+                )
+
+            show_payment_method_popup(top, _show_payment_wait)
+
         def _show_final_confirm(order_type: str) -> None:
+            if not self._is_checkout_session_active(session_token):
+                _unlock_after_popup()
+                return
             top = self.container.winfo_toplevel()
             show_final_order_confirm_popup(
                 top, order_type,
-                lambda: show_payment_method_popup(
-                    top,
-                    lambda method: show_payment_wait_popup(
-                        top,
-                        method,
-                        lambda m=method: show_receipt_issue_popup(
-                            top,
-                            lambda issue: self._complete_paid_order(m, order_type, issue)
-                        )
-                    )
-                )
+                lambda: _show_payment_methods(top, order_type)
             )
             _unlock_after_popup()
 
@@ -8224,11 +8265,16 @@ class CafeKioskApp:
         self._payment_confirm_pending = False
 
     def _complete_paid_order(self, method: str, order_type: str,
-                             issue_receipt: bool = False) -> None:
+                             issue_receipt: bool = False,
+                             session_token: "int | None" = None) -> None:
         """결제수단/영수증 발행 여부 선택 후 주문을 최종 완료한다."""
         def _do_finalize():
+            if session_token is not None and not self._is_checkout_session_active(session_token):
+                log_app_event("Ignored stale paid-order callback after session reset")
+                return
             wait = calculate_wait_minutes(order_list)
             receipt = finalize_order()
+            self._invalidate_checkout_session()
             if "⚠️" not in receipt:
                 receipt_status = "발행" if issue_receipt else "미발행"
                 receipt = (
@@ -8251,6 +8297,7 @@ class CafeKioskApp:
         """[❌ 전체 취소] 버튼 → 장바구니 초기화."""
         self._mark_session_activity("cancel_button")
         def _do():
+            self._invalidate_checkout_session()
             order_list.clear()
             self.state = self.STATE_ORDERING
             self.on_order_change()   # 두 윈도우 동시 갱신
@@ -8784,6 +8831,7 @@ class CafeKioskApp:
                                 speak(f"장바구니에 {canonical}이 없습니다.")
                         else:
                             # 전체 취소
+                            self._invalidate_checkout_session()
                             order_list.clear()
                             self.on_order_change()
                             self.log("\n❌  주문이 전체 취소되었습니다.")
@@ -8933,6 +8981,7 @@ class CafeKioskApp:
             self.root.after(2000, self.root.destroy)
 
         elif command == "cancel":
+            self._invalidate_checkout_session()
             order_list.clear()
             self.on_order_change()
             self.log("\n❌ 주문이 취소되었습니다.")
@@ -9825,6 +9874,26 @@ class KioskScreen:
         if callable(reset):
             reset()
 
+    def _checkout_session_token(self) -> int:
+        ctrl = self.settings_controller
+        token_func = getattr(ctrl, "_checkout_session_token", None)
+        if callable(token_func):
+            return token_func()
+        return 0
+
+    def _is_checkout_session_active(self, token: int) -> bool:
+        ctrl = self.settings_controller
+        active_func = getattr(ctrl, "_is_checkout_session_active", None)
+        if callable(active_func):
+            return active_func(token)
+        return bool(order_list)
+
+    def _invalidate_checkout_session(self) -> None:
+        ctrl = self.settings_controller
+        invalidate = getattr(ctrl, "_invalidate_checkout_session", None)
+        if callable(invalidate):
+            invalidate()
+
     # ──────────────────────────────────────────────────
     # 8-5  장바구니 수정 핸들러
     # ──────────────────────────────────────────────────
@@ -9952,28 +10021,54 @@ class KioskScreen:
                     _unlock_order_button(1200)
                     return
 
+                session_token = self._checkout_session_token()
+
+                def _show_payment_methods(top: tk.Misc, order_type: str) -> None:
+                    if not self._is_checkout_session_active(session_token):
+                        _unlock_order_button(900)
+                        return
+
+                    def _show_payment_wait(method: str) -> None:
+                        if not self._is_checkout_session_active(session_token):
+                            _unlock_order_button(900)
+                            return
+                        show_payment_wait_popup(
+                            top,
+                            method,
+                            lambda m=method: _show_receipt(m),
+                        )
+
+                    def _show_receipt(method: str) -> None:
+                        if not self._is_checkout_session_active(session_token):
+                            _unlock_order_button(900)
+                            return
+                        show_receipt_issue_popup(
+                            top,
+                            lambda issue, m=method: _paid(m, order_type, issue, session_token),
+                        )
+
+                    show_payment_method_popup(top, _show_payment_wait)
+
                 def _show_final_confirm(order_type: str) -> None:
+                    if not self._is_checkout_session_active(session_token):
+                        _unlock_order_button(900)
+                        return
                     top = self.container.winfo_toplevel()
                     show_final_order_confirm_popup(
                         top, order_type,
-                        lambda: show_payment_method_popup(
-                            top,
-                            lambda method: show_payment_wait_popup(
-                                top,
-                                method,
-                                lambda m=method: show_receipt_issue_popup(
-                                    top,
-                                    lambda issue: _paid(m, order_type, issue)
-                                )
-                            )
-                        )
+                        lambda: _show_payment_methods(top, order_type)
                     )
                     _unlock_order_button(900)
 
-                def _paid(method: str, order_type: str, issue_receipt: bool) -> None:
+                def _paid(method: str, order_type: str,
+                          issue_receipt: bool, token: int) -> None:
                     def _do_finalize():
+                        if not self._is_checkout_session_active(token):
+                            log_app_event("Ignored stale kiosk paid-order callback after session reset")
+                            return
                         wait = calculate_wait_minutes(order_list)   # 결제 전 대기시간 계산
                         receipt = finalize_order()   # 결제 처리 + TTS + order_list 초기화
+                        self._invalidate_checkout_session()
                         if "⚠️" not in receipt:
                             receipt_status = "발행" if issue_receipt else "미발행"
                             receipt = (
@@ -10007,6 +10102,7 @@ class KioskScreen:
         """
         self._notify_user_interaction()
         def _do():
+            self._invalidate_checkout_session()
             order_list.clear()
             self.on_order_change()   # 두 윈도우 동시 갱신
             if self.on_cancel_log is not None:
