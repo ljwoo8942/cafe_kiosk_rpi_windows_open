@@ -1894,17 +1894,21 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
 
     def _show_new_password_form() -> None:
         _clear_body()
-        outer = tk.Frame(popup, bg="#0f172a", padx=_px(18), pady=_px(16))
+        new_ph = max(ph, min(430, base_h - 12))
+        if new_ph != ph:
+            _center_popup_on_owner(popup, owner, pw, new_ph)
+
+        outer = tk.Frame(popup, bg="#0f172a", padx=_px(16), pady=_px(12))
         outer.pack(fill="both", expand=True)
 
         tk.Label(outer, text="새 관리자 비밀번호 등록",
-                 font=(FONT_UI, _fs(17), "bold"),
+                 font=(FONT_UI, _fs(16), "bold"),
                  bg="#0f172a", fg="#ffffff").pack(anchor="w")
         tk.Label(outer, text="초기 비밀번호 대신 사용할 새 비밀번호를 입력해 주세요.",
-                 font=(FONT_UI, _fs(10)),
+                 font=(FONT_UI, _fs(9)),
                  bg="#0f172a", fg="#cbd5e1",
                  wraplength=max(260, pw - 50),
-                 justify="left").pack(anchor="w", pady=(_px(4), _px(12)))
+                 justify="left").pack(anchor="w", pady=(_px(4), _px(8)))
 
         new_var = tk.StringVar(master=popup)
         confirm_var = tk.StringVar(master=popup)
@@ -1916,7 +1920,7 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
         new_entry = tk.Entry(outer, textvariable=new_var, show="*",
                              font=(FONT_UI, _fs(13)), bg="#ffffff", fg="#111827",
                              relief="flat")
-        new_entry.pack(fill="x", ipady=_px(6), pady=(_px(4), _px(8)))
+        new_entry.pack(fill="x", ipady=_px(5), pady=(_px(3), _px(7)))
 
         tk.Label(outer, text="새 비밀번호 확인",
                  font=(FONT_UI, _fs(10), "bold"),
@@ -1924,13 +1928,13 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
         confirm_entry = tk.Entry(outer, textvariable=confirm_var, show="*",
                                  font=(FONT_UI, _fs(13)), bg="#ffffff", fg="#111827",
                                  relief="flat")
-        confirm_entry.pack(fill="x", ipady=_px(6), pady=(_px(4), _px(8)))
+        confirm_entry.pack(fill="x", ipady=_px(5), pady=(_px(3), _px(7)))
 
         tk.Label(outer, textvariable=status_var,
                  font=(FONT_UI, _fs(9)),
                  bg="#0f172a", fg="#fbbf24",
                  wraplength=max(260, pw - 50),
-                 justify="left").pack(anchor="w", pady=(0, _px(8)))
+                 justify="left").pack(anchor="w", pady=(0, _px(6)))
 
         btn_row = tk.Frame(outer, bg="#0f172a")
         btn_row.pack(fill="x", side="bottom")
@@ -1961,13 +1965,13 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
                   font=(FONT_UI, _fs(11), "bold"),
                   bg="#2563eb", fg="white",
                   activebackground="#1d4ed8", activeforeground="white",
-                  relief="flat", padx=_px(12), pady=_px(7),
+                  relief="flat", padx=_px(12), pady=_px(6),
                   command=_save_new_password).grid(row=0, column=0, sticky="ew", padx=(0, _px(5)))
         tk.Button(btn_row, text="취소",
                   font=(FONT_UI, _fs(11), "bold"),
                   bg="#334155", fg="white",
                   activebackground="#1e293b", activeforeground="white",
-                  relief="flat", padx=_px(12), pady=_px(7),
+                  relief="flat", padx=_px(12), pady=_px(6),
                   command=_close).grid(row=0, column=1, sticky="ew", padx=(_px(5), 0))
 
         new_entry.focus_set()
