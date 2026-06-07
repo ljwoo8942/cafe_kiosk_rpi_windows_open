@@ -1819,7 +1819,7 @@ def _setup_modal_popup(popup: tk.Toplevel, owner: tk.Misc) -> None:
 
 
 def _center_popup_on_owner(popup: tk.Toplevel, owner: tk.Misc,
-                           width: int, height: int) -> None:
+                           width: int, height: int) -> tuple[int, int]:
     """가상 전체 화면이 아니라 팝업 부모 창 중앙에 배치한다."""
     try:
         owner.update_idletasks()
@@ -1851,6 +1851,7 @@ def _center_popup_on_owner(popup: tk.Toplevel, owner: tk.Misc,
         popup.geometry(f"{width}x{height}+{x}+{y}")
     except tk.TclError:
         pass
+    return width, height
 
 
 def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
@@ -1873,7 +1874,8 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
     base_h = owner.winfo_height() if owner.winfo_height() > 1 else owner.winfo_screenheight()
     pw = max(320, min(440, base_w - 20))
     ph = max(260, min(360, base_h - 20))
-    _center_popup_on_owner(popup, owner, pw, ph)
+    pw, ph = _center_popup_on_owner(popup, owner, pw, ph)
+    small = ph < 300 or pw < 360
 
     def _close() -> None:
         if not _widget_exists(popup):
@@ -1895,20 +1897,32 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
     def _show_new_password_form() -> None:
         _clear_body()
         new_ph = max(ph, min(430, base_h - 12))
+        new_small = small
         if new_ph != ph:
-            _center_popup_on_owner(popup, owner, pw, new_ph)
+            _, new_ph = _center_popup_on_owner(popup, owner, pw, new_ph)
+            new_small = new_ph < 300 or pw < 360
 
-        outer = tk.Frame(popup, bg="#0f172a", padx=_px(16), pady=_px(12))
-        outer.pack(fill="both", expand=True)
+        btn_row = tk.Frame(popup, bg="#0f172a",
+                           padx=_px(12 if new_small else 16),
+                           pady=_px(6 if new_small else 10))
+        btn_row.pack(fill="x", side="bottom")
+        btn_row.columnconfigure(0, weight=1)
+        btn_row.columnconfigure(1, weight=1)
+
+        outer = _scrollable_popup_body(
+            popup, "#0f172a",
+            padx=_px(12 if new_small else 16),
+            pady=_px(6 if new_small else 12),
+        )
 
         tk.Label(outer, text="새 관리자 비밀번호 등록",
-                 font=(FONT_UI, _fs(16), "bold"),
+                 font=(FONT_UI, _fs(14 if new_small else 16), "bold"),
                  bg="#0f172a", fg="#ffffff").pack(anchor="w")
         tk.Label(outer, text="초기 비밀번호 대신 사용할 새 비밀번호를 입력해 주세요.",
                  font=(FONT_UI, _fs(9)),
                  bg="#0f172a", fg="#cbd5e1",
                  wraplength=max(260, pw - 50),
-                 justify="left").pack(anchor="w", pady=(_px(4), _px(8)))
+                 justify="left").pack(anchor="w", pady=(_px(3), _px(5 if new_small else 8)))
 
         new_var = tk.StringVar(master=popup)
         confirm_var = tk.StringVar(master=popup)
@@ -1918,28 +1932,27 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
                  font=(FONT_UI, _fs(10), "bold"),
                  bg="#0f172a", fg="#93c5fd").pack(anchor="w")
         new_entry = tk.Entry(outer, textvariable=new_var, show="*",
-                             font=(FONT_UI, _fs(13)), bg="#ffffff", fg="#111827",
+                             font=(FONT_UI, _fs(12 if new_small else 13)),
+                             bg="#ffffff", fg="#111827",
                              relief="flat")
-        new_entry.pack(fill="x", ipady=_px(5), pady=(_px(3), _px(7)))
+        new_entry.pack(fill="x", ipady=_px(4 if new_small else 5),
+                       pady=(_px(2), _px(5 if new_small else 7)))
 
         tk.Label(outer, text="새 비밀번호 확인",
                  font=(FONT_UI, _fs(10), "bold"),
                  bg="#0f172a", fg="#93c5fd").pack(anchor="w")
         confirm_entry = tk.Entry(outer, textvariable=confirm_var, show="*",
-                                 font=(FONT_UI, _fs(13)), bg="#ffffff", fg="#111827",
+                                 font=(FONT_UI, _fs(12 if new_small else 13)),
+                                 bg="#ffffff", fg="#111827",
                                  relief="flat")
-        confirm_entry.pack(fill="x", ipady=_px(5), pady=(_px(3), _px(7)))
+        confirm_entry.pack(fill="x", ipady=_px(4 if new_small else 5),
+                           pady=(_px(2), _px(5 if new_small else 7)))
 
         tk.Label(outer, textvariable=status_var,
                  font=(FONT_UI, _fs(9)),
                  bg="#0f172a", fg="#fbbf24",
                  wraplength=max(260, pw - 50),
-                 justify="left").pack(anchor="w", pady=(0, _px(6)))
-
-        btn_row = tk.Frame(outer, bg="#0f172a")
-        btn_row.pack(fill="x", side="bottom")
-        btn_row.columnconfigure(0, weight=1)
-        btn_row.columnconfigure(1, weight=1)
+                 justify="left").pack(anchor="w", pady=(0, _px(4 if new_small else 6)))
 
         def _save_new_password() -> None:
             new_pw = new_var.get().strip()
@@ -1962,26 +1975,30 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
             _finish_auth()
 
         tk.Button(btn_row, text="저장",
-                  font=(FONT_UI, _fs(11), "bold"),
+                  font=(FONT_UI, _fs(10 if new_small else 11), "bold"),
                   bg="#2563eb", fg="white",
                   activebackground="#1d4ed8", activeforeground="white",
-                  relief="flat", padx=_px(12), pady=_px(6),
+                  relief="flat", padx=_px(10 if new_small else 12),
+                  pady=_px(3 if new_small else 6),
                   command=_save_new_password).grid(row=0, column=0, sticky="ew", padx=(0, _px(5)))
         tk.Button(btn_row, text="취소",
-                  font=(FONT_UI, _fs(11), "bold"),
+                  font=(FONT_UI, _fs(10 if new_small else 11), "bold"),
                   bg="#334155", fg="white",
                   activebackground="#1e293b", activeforeground="white",
-                  relief="flat", padx=_px(12), pady=_px(6),
+                  relief="flat", padx=_px(10 if new_small else 12),
+                  pady=_px(3 if new_small else 6),
                   command=_close).grid(row=0, column=1, sticky="ew", padx=(_px(5), 0))
 
         new_entry.focus_set()
         popup.bind("<Return>", lambda _e: _save_new_password())
 
-    outer = tk.Frame(popup, bg="#0f172a", padx=_px(18), pady=_px(16))
+    outer = tk.Frame(popup, bg="#0f172a",
+                     padx=_px(12 if small else 18),
+                     pady=_px(7 if small else 16))
     outer.pack(fill="both", expand=True)
 
     tk.Label(outer, text="관리자 비밀번호",
-             font=(FONT_UI, _fs(18), "bold"),
+             font=(FONT_UI, _fs(15 if small else 18), "bold"),
              bg="#0f172a", fg="#ffffff").pack(anchor="w")
 
     guide = (
@@ -1994,20 +2011,21 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
              font=(FONT_UI, _fs(10)),
              bg="#0f172a", fg="#cbd5e1",
              wraplength=max(260, pw - 50),
-             justify="left").pack(anchor="w", pady=(_px(5), _px(12)))
+             justify="left").pack(anchor="w", pady=(_px(4), _px(8 if small else 12)))
 
     password_var = tk.StringVar(master=popup)
     status_var = tk.StringVar(master=popup, value="")
     entry = tk.Entry(outer, textvariable=password_var, show="*",
-                     font=(FONT_UI, _fs(15)), bg="#ffffff", fg="#111827",
+                     font=(FONT_UI, _fs(13 if small else 15)),
+                     bg="#ffffff", fg="#111827",
                      relief="flat")
-    entry.pack(fill="x", ipady=_px(7), pady=(0, _px(8)))
+    entry.pack(fill="x", ipady=_px(5 if small else 7), pady=(0, _px(6 if small else 8)))
 
     tk.Label(outer, textvariable=status_var,
              font=(FONT_UI, _fs(9)),
              bg="#0f172a", fg="#fbbf24",
              wraplength=max(260, pw - 50),
-             justify="left").pack(anchor="w", pady=(0, _px(10)))
+             justify="left").pack(anchor="w", pady=(0, _px(6 if small else 10)))
 
     btn_row = tk.Frame(outer, bg="#0f172a")
     btn_row.pack(fill="x", side="bottom")
@@ -2040,16 +2058,16 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
             status_var.set("비밀번호가 올바르지 않습니다.")
 
     tk.Button(btn_row, text="확인",
-              font=(FONT_UI, _fs(11), "bold"),
+              font=(FONT_UI, _fs(10 if small else 11), "bold"),
               bg="#2563eb", fg="white",
               activebackground="#1d4ed8", activeforeground="white",
-              relief="flat", padx=_px(12), pady=_px(7),
+              relief="flat", padx=_px(10 if small else 12), pady=_px(3 if small else 7),
               command=_submit).grid(row=0, column=0, sticky="ew", padx=(0, _px(5)))
     tk.Button(btn_row, text="취소",
-              font=(FONT_UI, _fs(11), "bold"),
+              font=(FONT_UI, _fs(10 if small else 11), "bold"),
               bg="#334155", fg="white",
               activebackground="#1e293b", activeforeground="white",
-              relief="flat", padx=_px(12), pady=_px(7),
+              relief="flat", padx=_px(10 if small else 12), pady=_px(3 if small else 7),
               command=_close).grid(row=0, column=1, sticky="ew", padx=(_px(5), 0))
 
     popup.protocol("WM_DELETE_WINDOW", _close)
@@ -2270,11 +2288,19 @@ def show_recommendation_popup(root: tk.Tk,
     _setup_modal_popup(popup, owner)
 
     popup.update_idletasks()
-    card_w  = _px(160)
-    n_cards = len(recs)
-    pw = card_w * n_cards + _px(24) * (n_cards + 1)
+    n_cards = max(1, len(recs))
+    desired_card_w = _px(160)
+    pw = desired_card_w * n_cards + _px(24) * (n_cards + 1)
     ph = _px(380)
-    _center_popup_on_owner(popup, owner, pw, ph)
+    pw, ph = _center_popup_on_owner(popup, owner, pw, ph)
+    small = ph < 300 or pw < 360
+    single_col = pw < (desired_card_w * n_cards + _px(20) * (n_cards + 1))
+    card_w = (
+        max(_px(180), min(_px(220), pw - _px(60)))
+        if single_col else desired_card_w
+    )
+    card_h = _px(172 if small else 260)
+    img_size = _px(54 if small else 80)
 
     show_recommendation_popup._popup = popup
     global _rec_popup_images
@@ -2286,15 +2312,34 @@ def show_recommendation_popup(root: tk.Tk,
 
     _add_recommendation_once = _once_callback(_add_recommendation)
 
+    footer = tk.Frame(popup, bg="#1e2a3a", pady=_px(5 if small else 8))
+    footer.pack(fill="x", side="bottom")
+    tk.Button(footer, text="닫기",
+              font=(FONT_UI, _fs(9)),
+              bg="#2c3e50", fg="#bdc3c7",
+              activebackground="#1e2a3a", activeforeground="white",
+              relief="flat", padx=_px(16), pady=_px(4), cursor="hand2",
+              command=popup.destroy).pack()
+
+    outer = _scrollable_popup_body(
+        popup, "#1e2a3a",
+        padx=_px(10 if small else 14),
+        pady=_px(8 if small else 10),
+    )
+
     # 헤더
-    tk.Label(popup,
+    tk.Label(outer,
              text="오늘의 추천 메뉴",
              font=(FONT_UI, _fs(14), "bold"),
-             bg="#1e2a3a", fg="#ffd700").pack(pady=(_px(14), _px(8)))
+             bg="#1e2a3a", fg="#ffd700").pack(pady=(0, _px(7 if small else 8)))
 
-    cards_frame = tk.Frame(popup, bg="#1e2a3a")
-    cards_frame.pack(padx=_px(16), pady=(0, _px(10)))
+    cards_frame = tk.Frame(outer, bg="#1e2a3a")
+    cards_frame.pack(fill="x")
+    if not single_col:
+        for col in range(n_cards):
+            cards_frame.columnconfigure(col, weight=1, uniform="rec")
 
+    valid_idx = 0
     for name in recs:
         if name not in MENU_BY_NAME:
             continue
@@ -2305,11 +2350,17 @@ def show_recommendation_popup(root: tk.Tk,
                         relief="solid", bd=1,
                         highlightbackground="#4a90d9",
                         highlightthickness=1,
-                        width=card_w, height=_px(260))
-        card.pack(side="left", padx=_px(10))
+                        width=card_w, height=card_h)
+        if single_col:
+            card.pack(fill="x", padx=_px(4), pady=_px(4))
+        else:
+            card.grid(row=0, column=valid_idx, sticky="nsew", padx=_px(6))
         card.pack_propagate(False)
+        valid_idx += 1
 
-        inner = tk.Frame(card, bg="#2c3e50", padx=_px(8), pady=_px(8))
+        inner = tk.Frame(card, bg="#2c3e50",
+                         padx=_px(7 if small else 8),
+                         pady=_px(6 if small else 8))
         inner.pack(fill="both", expand=True)
 
         # 메뉴 이미지 또는 이모지
@@ -2317,7 +2368,7 @@ def show_recommendation_popup(root: tk.Tk,
         if PIL_AVAILABLE and img_path:
             try:
                 with Image.open(img_path) as raw:
-                    bg_img = _menu_square_image(raw.copy(), _px(80))
+                    bg_img = _menu_square_image(raw.copy(), img_size)
                 photo  = ImageTk.PhotoImage(bg_img)
                 _rec_popup_images.append(photo)  # 모듈 레벨 보관 — GC 완전 방지
                 lbl    = tk.Label(inner, image=photo, bg="#2c3e50")
@@ -2327,11 +2378,11 @@ def show_recommendation_popup(root: tk.Tk,
                 print(f"⚠️  추천 이미지 로드 실패 [{name}]: {e}")
                 tk.Label(inner, text="사진 없음",
                          font=(FONT_UI, _fs(10), "bold"),
-                         bg="#2c3e50", fg="#bdc3c7").pack(pady=(_px(18), _px(10)))
+                         bg="#2c3e50", fg="#bdc3c7").pack(pady=(_px(6 if small else 18), _px(6 if small else 10)))
         else:
             tk.Label(inner, text="사진 없음",
                      font=(FONT_UI, _fs(10), "bold"),
-                     bg="#2c3e50", fg="#bdc3c7").pack(pady=(_px(18), _px(10)))
+                     bg="#2c3e50", fg="#bdc3c7").pack(pady=(_px(6 if small else 18), _px(6 if small else 10)))
 
         tk.Label(inner, text=name,
                  font=(FONT_UI, _fs(10), "bold"),
@@ -2360,16 +2411,9 @@ def show_recommendation_popup(root: tk.Tk,
                   font=(FONT_UI, _fs(9), "bold"),
                   bg="#2980b9", fg="white",
                   activebackground="#1a6fa8", activeforeground="white",
-                  relief="flat", pady=5, cursor="hand2",
+                  relief="flat", pady=_px(4 if small else 5), cursor="hand2",
                   command=lambda n=name, p=price: _add_recommendation_once(n, p)
                   ).pack(fill="x", pady=(_px(8), 0))
-
-    tk.Button(popup, text="닫기",
-              font=(FONT_UI, _fs(9)),
-              bg="#2c3e50", fg="#bdc3c7",
-              activebackground="#1e2a3a", activeforeground="white",
-              relief="flat", padx=16, pady=4, cursor="hand2",
-              command=popup.destroy).pack(pady=(_px(4), _px(12)))
 
 
 def ask_hot_ice(root: tk.Tk, name: str, base_price: int,
@@ -2394,19 +2438,20 @@ def ask_hot_ice(root: tk.Tk, name: str, base_price: int,
     _setup_modal_popup(popup, owner)
 
     pw, ph = 380, 260
-    _center_popup_on_owner(popup, owner, pw, ph)
+    pw, ph = _center_popup_on_owner(popup, owner, pw, ph)
+    small = ph < 250 or pw < 340
 
     ask_hot_ice._popup = popup
 
     tk.Label(popup,
              text=name,
-             font=(FONT_UI, _fs(15), "bold"),
-             bg="#2c1a0e", fg="#f5deb3").pack(pady=(22, 4))
+             font=(FONT_UI, _fs(13 if small else 15), "bold"),
+             bg="#2c1a0e", fg="#f5deb3").pack(pady=(_px(12 if small else 22), _px(3 if small else 4)))
 
     tk.Label(popup,
              text="온도 옵션을 선택해 주세요",
              font=(FONT_UI, _fs(10)),
-             bg="#2c1a0e", fg="#c9a97a").pack(pady=(0, 16))
+             bg="#2c1a0e", fg="#c9a97a").pack(pady=(0, _px(8 if small else 16)))
 
     btn_frame = tk.Frame(popup, bg="#2c1a0e")
     btn_frame.pack()
@@ -2423,19 +2468,21 @@ def ask_hot_ice(root: tk.Tk, name: str, base_price: int,
     # RPi에서 이모지 폰트가 깨질 수 있어 텍스트만 사용한다.
     tk.Button(btn_frame,
               text=f"ICE  아이스\n{ice_price:,}원",
-              font=(FONT_UI, _fs(12), "bold"),
+              font=(FONT_UI, _fs(11 if small else 12), "bold"),
               bg="#1565c0", fg="white",
               activebackground="#0d47a1", activeforeground="white",
-              relief="flat", width=10, pady=14, cursor="hand2",
+              relief="flat", width=9 if small else 10,
+              pady=_px(8 if small else 14), cursor="hand2",
               command=lambda: _choose("아이스", ice_price)
-              ).pack(side="left", padx=(0, 12))
+              ).pack(side="left", padx=(0, _px(8 if small else 12)))
 
     tk.Button(btn_frame,
               text=f"HOT  핫\n{hot_price:,}원",
-              font=(FONT_UI, _fs(12), "bold"),
+              font=(FONT_UI, _fs(11 if small else 12), "bold"),
               bg="#bf360c", fg="white",
               activebackground="#8d1a00", activeforeground="white",
-              relief="flat", width=10, pady=14, cursor="hand2",
+              relief="flat", width=9 if small else 10,
+              pady=_px(8 if small else 14), cursor="hand2",
               command=lambda: _choose("핫", hot_price)
               ).pack(side="left")
 
@@ -2443,8 +2490,8 @@ def ask_hot_ice(root: tk.Tk, name: str, base_price: int,
               font=(FONT_UI, _fs(9)),
               bg="#3e2010", fg="#c9a97a",
               activebackground="#2c1a0e", activeforeground="#f5deb3",
-              relief="flat", padx=14, pady=4, cursor="hand2",
-              command=popup.destroy).pack(pady=(16, 0))
+              relief="flat", padx=_px(14), pady=_px(4), cursor="hand2",
+              command=popup.destroy).pack(pady=(_px(8 if small else 16), 0))
 
 
 def ask_size_option(root: tk.Tk, name: str, option: str, base_price: int,
@@ -2469,20 +2516,21 @@ def ask_size_option(root: tk.Tk, name: str, option: str, base_price: int,
 
     pw = 420
     ph = 280
-    _center_popup_on_owner(popup, owner, pw, ph)
+    pw, ph = _center_popup_on_owner(popup, owner, pw, ph)
+    small = ph < 260 or pw < 360
 
     ask_size_option._popup = popup
 
     option_text = f" ({option})" if option else ""
     tk.Label(popup,
              text=f"{name}{option_text}",
-             font=(FONT_UI, _fs(15), "bold"),
-             bg="#17324d", fg="#e7f3ff").pack(pady=(22, 4))
+             font=(FONT_UI, _fs(13 if small else 15), "bold"),
+             bg="#17324d", fg="#e7f3ff").pack(pady=(_px(12 if small else 22), _px(3 if small else 4)))
 
     tk.Label(popup,
              text="사이즈를 선택해 주세요",
              font=(FONT_UI, _fs(10)),
-             bg="#17324d", fg="#a9c7df").pack(pady=(0, 16))
+             bg="#17324d", fg="#a9c7df").pack(pady=(0, _px(8 if small else 16)))
 
     btn_frame = tk.Frame(popup, bg="#17324d")
     btn_frame.pack()
@@ -2498,33 +2546,35 @@ def ask_size_option(root: tk.Tk, name: str, option: str, base_price: int,
 
     tk.Button(btn_frame,
               text=f"일반\n{regular_price:,}원",
-              font=(FONT_UI, _fs(12), "bold"),
+              font=(FONT_UI, _fs(11 if small else 12), "bold"),
               bg="#2e7d32", fg="white",
               activebackground="#1b5e20", activeforeground="white",
-              relief="flat", width=12, pady=14, cursor="hand2",
+              relief="flat", width=9 if small else 12,
+              pady=_px(8 if small else 14), cursor="hand2",
               command=lambda: _choose("일반", regular_price)
-              ).pack(side="left", padx=(0, 12))
+              ).pack(side="left", padx=(0, _px(8 if small else 12)))
 
     tk.Button(btn_frame,
               text=f"라지(L)\n{large_price:,}원",
-              font=(FONT_UI, _fs(12), "bold"),
+              font=(FONT_UI, _fs(11 if small else 12), "bold"),
               bg="#1565c0", fg="white",
               activebackground="#0d47a1", activeforeground="white",
-              relief="flat", width=12, pady=14, cursor="hand2",
+              relief="flat", width=9 if small else 12,
+              pady=_px(8 if small else 14), cursor="hand2",
               command=lambda: _choose("라지(L)", large_price)
               ).pack(side="left")
 
     tk.Label(popup,
              text=f"라지 선택 시 +{SIZE_UP_SURCHARGE:,}원",
              font=(FONT_UI, _fs(9)),
-             bg="#17324d", fg="#a9c7df").pack(pady=(12, 0))
+             bg="#17324d", fg="#a9c7df").pack(pady=(_px(6 if small else 12), 0))
 
     tk.Button(popup, text="취소",
               font=(FONT_UI, _fs(9)),
               bg="#224968", fg="#d8edf9",
               activebackground="#17324d", activeforeground="#ffffff",
-              relief="flat", padx=14, pady=4, cursor="hand2",
-              command=popup.destroy).pack(pady=(10, 0))
+              relief="flat", padx=_px(14), pady=_px(4), cursor="hand2",
+              command=popup.destroy).pack(pady=(_px(6 if small else 10), 0))
 
 
 def ask_shot_option(root: tk.Tk, name: str, option: str, base_price: int,
@@ -2549,20 +2599,21 @@ def ask_shot_option(root: tk.Tk, name: str, option: str, base_price: int,
 
     pw = 420
     ph = 280
-    _center_popup_on_owner(popup, owner, pw, ph)
+    pw, ph = _center_popup_on_owner(popup, owner, pw, ph)
+    small = ph < 260 or pw < 360
 
     ask_shot_option._popup = popup
 
     option_text = f" ({option})" if option else ""
     tk.Label(popup,
              text=f"{name}{option_text}",
-             font=(FONT_UI, _fs(15), "bold"),
-             bg="#2b1d13", fg="#f8e7c9").pack(pady=(22, 4))
+             font=(FONT_UI, _fs(13 if small else 15), "bold"),
+             bg="#2b1d13", fg="#f8e7c9").pack(pady=(_px(12 if small else 22), _px(3 if small else 4)))
 
     tk.Label(popup,
              text="샷 추가 옵션을 선택해 주세요",
              font=(FONT_UI, _fs(10)),
-             bg="#2b1d13", fg="#d6b889").pack(pady=(0, 16))
+             bg="#2b1d13", fg="#d6b889").pack(pady=(0, _px(8 if small else 16)))
 
     btn_frame = tk.Frame(popup, bg="#2b1d13")
     btn_frame.pack()
@@ -2580,33 +2631,35 @@ def ask_shot_option(root: tk.Tk, name: str, option: str, base_price: int,
 
     tk.Button(btn_frame,
               text=f"기본\n{base_price:,}원",
-              font=(FONT_UI, _fs(12), "bold"),
+              font=(FONT_UI, _fs(11 if small else 12), "bold"),
               bg="#6d4c41", fg="white",
               activebackground="#4e342e", activeforeground="white",
-              relief="flat", width=12, pady=14, cursor="hand2",
+              relief="flat", width=9 if small else 12,
+              pady=_px(8 if small else 14), cursor="hand2",
               command=lambda: _choose(False)
-              ).pack(side="left", padx=(0, 12))
+              ).pack(side="left", padx=(0, _px(8 if small else 12)))
 
     tk.Button(btn_frame,
               text=f"샷 추가\n{shot_price:,}원",
-              font=(FONT_UI, _fs(12), "bold"),
+              font=(FONT_UI, _fs(11 if small else 12), "bold"),
               bg="#bf6b21", fg="white",
               activebackground="#8d4a12", activeforeground="white",
-              relief="flat", width=12, pady=14, cursor="hand2",
+              relief="flat", width=9 if small else 12,
+              pady=_px(8 if small else 14), cursor="hand2",
               command=lambda: _choose(True)
               ).pack(side="left")
 
     tk.Label(popup,
              text=f"샷 추가 시 +{SHOT_SURCHARGE:,}원",
              font=(FONT_UI, _fs(9)),
-             bg="#2b1d13", fg="#d6b889").pack(pady=(12, 0))
+             bg="#2b1d13", fg="#d6b889").pack(pady=(_px(6 if small else 12), 0))
 
     tk.Button(popup, text="취소",
               font=(FONT_UI, _fs(9)),
               bg="#3a281b", fg="#ead5b6",
               activebackground="#2b1d13", activeforeground="#ffffff",
-              relief="flat", padx=14, pady=4, cursor="hand2",
-              command=popup.destroy).pack(pady=(10, 0))
+              relief="flat", padx=_px(14), pady=_px(4), cursor="hand2",
+              command=popup.destroy).pack(pady=(_px(6 if small else 10), 0))
 
 
 def start_menu_option_selection(root: tk.Tk, name: str, base_price: int,
@@ -3305,10 +3358,11 @@ def show_receipt_issue_popup(root: tk.Tk, on_selected: "callable") -> None:
         base_h = owner.winfo_screenheight()
     pw = max(340, min(560, base_w - 24))
     ph = max(280, min(380, base_h - 24))
-    _center_popup_on_owner(popup, owner, pw, ph)
+    pw, ph = _center_popup_on_owner(popup, owner, pw, ph)
     show_receipt_issue_popup._popup = popup
 
     small = ph < 340
+    very_small = ph < 260 or pw < 360
 
     def _close() -> None:
         if _widget_exists(popup):
@@ -3320,17 +3374,29 @@ def show_receipt_issue_popup(root: tk.Tk, on_selected: "callable") -> None:
 
     _select = _once_callback(_select_receipt)
 
-    outer = tk.Frame(popup, bg="#fffaf0", padx=_px(20), pady=_px(18))
-    outer.pack(fill="both", expand=True)
+    footer = tk.Frame(popup, bg="#f5eadf", pady=_px(5 if very_small else 8))
+    footer.pack(fill="x", side="bottom")
+    tk.Button(footer, text="취소",
+              font=(FONT_UI, _fs(9 if very_small else 10), "bold"),
+              bg="#ffffff", fg="#4b3a2b",
+              activebackground="#ead7c4", activeforeground="#2b2118",
+              relief="flat", padx=_px(20), pady=_px(4 if very_small else 6),
+              cursor="hand2", command=_close).pack()
+
+    outer = _scrollable_popup_body(
+        popup, "#fffaf0",
+        padx=_px(14 if very_small else 20),
+        pady=_px(10 if very_small else 18),
+    )
 
     tk.Label(outer, text="🧾 영수증을 발행할까요?",
-             font=(FONT_UI, _fs(19 if small else 23), "bold"),
-             bg="#fffaf0", fg="#2b2118").pack(pady=(0, _px(8)))
+             font=(FONT_UI, _fs(16 if very_small else 19 if small else 23), "bold"),
+             bg="#fffaf0", fg="#2b2118").pack(pady=(0, _px(5 if very_small else 8)))
 
     tk.Label(outer, text="주문 완료 전에 영수증 발행 여부를 선택해 주세요.",
              font=(FONT_UI, _fs(10 if small else 11)),
              bg="#fffaf0", fg="#7c5f45",
-             wraplength=max(260, pw - 60), justify="center").pack(pady=(0, _px(18)))
+             wraplength=max(240, pw - 60), justify="center").pack(pady=(0, _px(9 if very_small else 18)))
 
     btn_row = tk.Frame(outer, bg="#fffaf0")
     btn_row.pack(fill="x", expand=True)
@@ -3338,27 +3404,22 @@ def show_receipt_issue_popup(root: tk.Tk, on_selected: "callable") -> None:
     btn_row.columnconfigure(1, weight=1, uniform="receipt")
 
     tk.Button(btn_row, text="발행",
-              font=(FONT_UI, _fs(13 if small else 15), "bold"),
+              font=(FONT_UI, _fs(11 if very_small else 13 if small else 15), "bold"),
               bg="#2563eb", fg="white",
               activebackground="#1d4ed8", activeforeground="white",
-              relief="flat", padx=_px(18), pady=_px(14), cursor="hand2",
+              relief="flat", padx=_px(12 if very_small else 18),
+              pady=_px(8 if very_small else 14), cursor="hand2",
               command=lambda: _select(True)
               ).grid(row=0, column=0, sticky="nsew", padx=(0, _px(7)))
 
     tk.Button(btn_row, text="미발행",
-              font=(FONT_UI, _fs(13 if small else 15), "bold"),
+              font=(FONT_UI, _fs(11 if very_small else 13 if small else 15), "bold"),
               bg="#ffffff", fg="#374151",
               activebackground="#efe2d4", activeforeground="#111827",
-              relief="flat", padx=_px(18), pady=_px(14), cursor="hand2",
+              relief="flat", padx=_px(12 if very_small else 18),
+              pady=_px(8 if very_small else 14), cursor="hand2",
               command=lambda: _select(False)
               ).grid(row=0, column=1, sticky="nsew", padx=(_px(7), 0))
-
-    tk.Button(outer, text="취소",
-              font=(FONT_UI, _fs(10), "bold"),
-              bg="#f5eadf", fg="#4b3a2b",
-              activebackground="#ead7c4", activeforeground="#2b2118",
-              relief="flat", padx=_px(22), pady=_px(6), cursor="hand2",
-              command=_close).pack(pady=(_px(18), 0))
 
     speak("영수증 필요하신가요?")
 
@@ -5503,8 +5564,9 @@ def show_discount_settings_popup(root: tk.Tk, on_change: "callable | None" = Non
 
     pw = min(560, owner.winfo_screenwidth() - 40)
     ph = min(420, owner.winfo_screenheight() - 30)
-    _center_popup_on_owner(popup, owner, pw, ph)
+    pw, ph = _center_popup_on_owner(popup, owner, pw, ph)
     show_discount_settings_popup._popup = popup
+    small = ph < 320 or pw < 400
 
     menu_names = list(MENU_BY_NAME.keys())
     selected_var = tk.StringVar(value=menu_names[0] if menu_names else "")
@@ -5512,12 +5574,22 @@ def show_discount_settings_popup(root: tk.Tk, on_change: "callable | None" = Non
     value_var = tk.StringVar(value="")
     status_var = tk.StringVar(value="")
 
-    outer = tk.Frame(popup, bg="#102033", padx=_px(18), pady=_px(16))
-    outer.pack(fill="both", expand=True)
+    footer = tk.Frame(popup, bg="#102033",
+                      padx=_px(10 if small else 18),
+                      pady=_px(8 if small else 12))
+    footer.pack(fill="x", side="bottom")
+    for col in range(3):
+        footer.columnconfigure(col, weight=1)
+
+    outer = _scrollable_popup_body(
+        popup, "#102033",
+        padx=_px(12 if small else 18),
+        pady=_px(10 if small else 16),
+    )
 
     tk.Label(outer, text="할인 설정",
-             font=(FONT_UI, _fs(18), "bold"),
-             bg="#102033", fg="#ffffff").pack(anchor="w", pady=(0, _px(12)))
+             font=(FONT_UI, _fs(15 if small else 18), "bold"),
+             bg="#102033", fg="#ffffff").pack(anchor="w", pady=(0, _px(8 if small else 12)))
 
     menu_row = tk.Frame(outer, bg="#102033")
     menu_row.pack(fill="x", pady=(0, _px(10)))
@@ -5631,26 +5703,27 @@ def show_discount_settings_popup(root: tk.Tk, on_change: "callable | None" = Non
 
     menu_combo.bind("<<ComboboxSelected>>", lambda _e: _load_selected())
 
-    button_row = tk.Frame(outer, bg="#102033")
-    button_row.pack(fill="x", pady=(_px(8), 0))
-    tk.Button(button_row, text="적용",
-              font=(FONT_UI, _fs(11), "bold"),
+    tk.Button(footer, text="적용",
+              font=(FONT_UI, _fs(10 if small else 11), "bold"),
               bg="#2563eb", fg="white",
               activebackground="#1d4ed8", activeforeground="white",
-              relief="flat", padx=_px(24), pady=_px(7), cursor="hand2",
-              command=_apply_discount).pack(side="left")
-    tk.Button(button_row, text="해제",
-              font=(FONT_UI, _fs(11), "bold"),
+              relief="flat", padx=_px(12 if small else 24),
+              pady=_px(5 if small else 7), cursor="hand2",
+              command=_apply_discount).grid(row=0, column=0, sticky="ew", padx=(0, _px(4)))
+    tk.Button(footer, text="해제",
+              font=(FONT_UI, _fs(10 if small else 11), "bold"),
               bg="#f59e0b", fg="#111827",
               activebackground="#d97706", activeforeground="#111827",
-              relief="flat", padx=_px(24), pady=_px(7), cursor="hand2",
-              command=_clear_discount).pack(side="left", padx=_px(8))
-    tk.Button(button_row, text="닫기",
-              font=(FONT_UI, _fs(11), "bold"),
+              relief="flat", padx=_px(12 if small else 24),
+              pady=_px(5 if small else 7), cursor="hand2",
+              command=_clear_discount).grid(row=0, column=1, sticky="ew", padx=_px(4))
+    tk.Button(footer, text="닫기",
+              font=(FONT_UI, _fs(10 if small else 11), "bold"),
               bg="#e94560", fg="white",
               activebackground="#c73652", activeforeground="white",
-              relief="flat", padx=_px(24), pady=_px(7), cursor="hand2",
-              command=popup.destroy).pack(side="right")
+              relief="flat", padx=_px(12 if small else 24),
+              pady=_px(5 if small else 7), cursor="hand2",
+              command=popup.destroy).grid(row=0, column=2, sticky="ew", padx=(_px(4), 0))
 
     _load_selected()
 
