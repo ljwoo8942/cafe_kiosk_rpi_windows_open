@@ -8391,19 +8391,36 @@ class CafeKioskApp:
             self.set_status("결제수단 선택 - 화면에서 결제수단을 선택해 주세요")
             speak("결제수단 선택 화면으로 이동합니다. 화면에서 결제수단을 선택해 주세요.")
             top = self.container.winfo_toplevel()
-            self.root.after(
-                0,
-                lambda ot=order_type: show_payment_method_popup(
-                    top,
-                    lambda method, order_type=ot: show_payment_wait_popup(
+            session_token = self._checkout_session_token()
+
+            def _show_payment_methods() -> None:
+                if not self._is_checkout_session_active(session_token):
+                    return
+
+                def _show_payment_wait(method: str) -> None:
+                    if not self._is_checkout_session_active(session_token):
+                        return
+                    show_payment_wait_popup(
                         top,
                         method,
-                        lambda m=method, ot2=order_type: show_receipt_issue_popup(
-                            top,
-                            lambda issue: self._complete_paid_order(m, ot2, issue)
-                        )
+                        lambda m=method: _show_receipt(m),
                     )
-                )
+
+                def _show_receipt(method: str) -> None:
+                    if not self._is_checkout_session_active(session_token):
+                        return
+                    show_receipt_issue_popup(
+                        top,
+                        lambda issue, m=method: self._complete_paid_order(
+                            m, order_type, issue, session_token
+                        ),
+                    )
+
+                show_payment_method_popup(top, _show_payment_wait)
+
+            self.root.after(
+                0,
+                _show_payment_methods,
             )
             return
 
