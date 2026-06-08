@@ -14,6 +14,7 @@ $VenvDir = Join-Path $RepoRoot ".venv-windows"
 $ReqFile = Join-Path $RepoRoot "requirements-windows.txt"
 $MainFile = Join-Path $RepoRoot "cafe_kiosk\cafe_kiosk_final.py"
 $Launcher = Join-Path $RepoRoot "run_windows.cmd"
+$IconFile = Join-Path $RepoRoot "assets\app_icon.ico"
 $PythonWingetId = "Python.Python.3.13"
 $MinPython = [version]"3.10.0"
 $MaxPythonExclusive = [version]"3.14.0"
@@ -224,6 +225,9 @@ if (!$NoShortcut) {
     $Shortcut.TargetPath = $Launcher
     $Shortcut.WorkingDirectory = $RepoRoot
     $Shortcut.Description = "BEAN & BREW Cafe Kiosk"
+    if (Test-Path -LiteralPath $IconFile) {
+        $Shortcut.IconLocation = $IconFile
+    }
     $Shortcut.Save()
     Write-Host "Shortcut created: $ShortcutPath" -ForegroundColor Green
 }

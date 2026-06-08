@@ -103,6 +103,9 @@ if IS_LINUX and os.path.exists("/proc/device-tree/model"):
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(APP_DIR)
 APP_VERSION_FILE = os.path.join(PROJECT_DIR, "VERSION")
+ASSETS_DIR = os.path.join(PROJECT_DIR, "assets")
+APP_ICON_PNG = os.path.join(ASSETS_DIR, "app_icon.png")
+APP_ICON_ICO = os.path.join(ASSETS_DIR, "app_icon.ico")
 GITHUB_REPO = "ljwoo8942/cafe_kiosk_rpi_windows_open"
 GITHUB_LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases"
@@ -443,6 +446,27 @@ except (ImportError, ModuleNotFoundError):
 # ─────────────────────────────────────────────────────
 import tkinter as tk
 from tkinter import scrolledtext, ttk, messagebox, filedialog
+
+_APP_ICON_PHOTO = None
+
+
+def _apply_app_icon(window: tk.Misc) -> None:
+    """설치 자산의 앱 아이콘을 Tk 창에 적용한다."""
+    global _APP_ICON_PHOTO
+    try:
+        if IS_WINDOWS and os.path.exists(APP_ICON_ICO):
+            window.iconbitmap(APP_ICON_ICO)
+    except Exception:
+        pass
+
+    try:
+        if _APP_ICON_PHOTO is None and os.path.exists(APP_ICON_PNG):
+            _APP_ICON_PHOTO = tk.PhotoImage(file=APP_ICON_PNG)
+        if _APP_ICON_PHOTO is not None:
+            window.iconphoto(True, _APP_ICON_PHOTO)
+    except Exception:
+        pass
+
 
 # ── Pillow: 메뉴 이미지 로딩 및 리사이즈 (선택적 임포트) ─
 try:
@@ -10333,6 +10357,7 @@ def main() -> None:
     # ── 메인 윈도우 생성 ─────────────────────────────────
     root = tk.Tk()
     root.title("BEAN & BREW - 음성 + 터치 주문")
+    _apply_app_icon(root)
     root.configure(bg="#1a1a2e")
     root.resizable(True, True)
 
@@ -10436,6 +10461,7 @@ def main() -> None:
 
         kiosk_win = tk.Toplevel(root)
         kiosk_win.title("BEAN & BREW - 키오스크 주문")
+        _apply_app_icon(kiosk_win)
         kiosk_win.configure(bg="#faf7f2")
         kiosk_win.resizable(True, True)
         kiosk_win.geometry(_geometry_for_monitor(kiosk_monitor))
@@ -10499,6 +10525,7 @@ def main() -> None:
 
         kiosk_win = tk.Toplevel(root)
         kiosk_win.title("BEAN & BREW - 키오스크 주문")
+        _apply_app_icon(kiosk_win)
         kiosk_win.configure(bg="#faf7f2")
         kiosk_win.resizable(True, True)
         kiosk_win.minsize(min_w, min_h)

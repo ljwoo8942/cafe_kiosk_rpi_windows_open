@@ -15,6 +15,28 @@ from pathlib import Path
 APP_NAME = "BEAN & BREW Cafe Kiosk"
 LOCK_DIR = Path(tempfile.gettempdir()) / "bean_brew_cafe_kiosk_launch.lock"
 LOCK_FILE = LOCK_DIR / "launcher.pid"
+APP_ICON_ICO = Path(__file__).resolve().parent / "assets" / "app_icon.ico"
+APP_ICON_PNG = Path(__file__).resolve().parent / "assets" / "app_icon.png"
+_APP_ICON_PHOTO = None
+
+
+def _apply_window_icon(root) -> None:
+    """Windows 시작 안내창에 설치 자산 아이콘을 적용한다."""
+    global _APP_ICON_PHOTO
+    try:
+        if APP_ICON_ICO.is_file():
+            root.iconbitmap(str(APP_ICON_ICO))
+    except Exception:
+        pass
+    try:
+        import tkinter as tk
+
+        if _APP_ICON_PHOTO is None and APP_ICON_PNG.is_file():
+            _APP_ICON_PHOTO = tk.PhotoImage(file=str(APP_ICON_PNG))
+        if _APP_ICON_PHOTO is not None:
+            root.iconphoto(True, _APP_ICON_PHOTO)
+    except Exception:
+        pass
 
 
 def _is_process_running(pid: int) -> bool:
@@ -78,6 +100,7 @@ def _show_message(title: str, message: str) -> None:
         from tkinter import messagebox
 
         root = tk.Tk()
+        _apply_window_icon(root)
         root.withdraw()
         root.attributes("-topmost", True)
         messagebox.showinfo(title, message, parent=root)
@@ -92,6 +115,7 @@ def _show_starting_splash(duration_ms: int = 3500) -> None:
 
         root = tk.Tk()
         root.title(APP_NAME)
+        _apply_window_icon(root)
         root.configure(bg="#102033")
         root.resizable(False, False)
         try:

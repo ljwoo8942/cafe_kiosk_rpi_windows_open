@@ -14,6 +14,8 @@ DefaultDirName={localappdata}\BEAN_BREW_Cafe_Kiosk
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
+SetupIconFile={#SourceRoot}\assets\app_icon.ico
+UninstallDisplayIcon={app}\assets\app_icon.ico
 OutputDir={#SourceRoot}\dist
 OutputBaseFilename=CafeKiosk-Windows-Setup-{#AppVersion}
 Compression=lzma2
@@ -33,12 +35,13 @@ Source: "{#SourceRoot}\install_windows.ps1"; DestDir: "{app}"; Flags: ignorevers
 Source: "{#SourceRoot}\uninstall_windows.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\run_windows.cmd"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#SourceRoot}\launch_windows.pyw"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#SourceRoot}\assets\*"; DestDir: "{app}\assets"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#SourceRoot}\cafe_kiosk\*"; DestDir: "{app}\cafe_kiosk"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__\*,.vs\*,.vscode\*,*.pyc,*.pyo,*.db,*.db-*,*.json,tts_cache\*"
 
 [Icons]
-Name: "{autodesktop}\BEAN & BREW Cafe Kiosk"; Filename: "{app}\run_windows.cmd"; WorkingDir: "{app}"
-Name: "{group}\BEAN & BREW Cafe Kiosk"; Filename: "{app}\run_windows.cmd"; WorkingDir: "{app}"
-Name: "{group}\설치/복구 실행"; Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\install_windows.ps1"""; WorkingDir: "{app}"
+Name: "{autodesktop}\BEAN & BREW Cafe Kiosk"; Filename: "{app}\run_windows.cmd"; WorkingDir: "{app}"; IconFilename: "{app}\assets\app_icon.ico"
+Name: "{group}\BEAN & BREW Cafe Kiosk"; Filename: "{app}\run_windows.cmd"; WorkingDir: "{app}"; IconFilename: "{app}\assets\app_icon.ico"
+Name: "{group}\설치/복구 실행"; Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\install_windows.ps1"""; WorkingDir: "{app}"; IconFilename: "{app}\assets\app_icon.ico"
 
 [Run]
 Filename: "powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\install_windows.ps1"" -NoShortcut"; WorkingDir: "{app}"; StatusMsg: "필수 Python 패키지를 설치하는 중입니다..."; Flags: runascurrentuser

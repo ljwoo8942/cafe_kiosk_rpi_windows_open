@@ -150,6 +150,7 @@ Name=BEAN & BREW Cafe Kiosk
 Comment=Voice guided cafe kiosk
 Exec=/usr/local/bin/cafe-kiosk
 Path=/opt/cafe-kiosk
+Icon=/opt/cafe-kiosk/assets/app_icon.png
 Terminal=false
 Categories=Utility;
 """
@@ -272,6 +273,13 @@ def make_data_tar() -> bytes:
                     continue
                 if source.is_file():
                     tar_add_file(tar, source, f"./opt/cafe-kiosk/{rel.as_posix()}")
+
+            assets_dir = ROOT_DIR / "assets"
+            if assets_dir.exists():
+                for source in sorted(assets_dir.rglob("*")):
+                    rel = source.relative_to(ROOT_DIR)
+                    if source.is_file():
+                        tar_add_file(tar, source, f"./opt/cafe-kiosk/{rel.as_posix()}")
 
             tar_add_bytes(tar, "./usr/local/bin/cafe-kiosk", LAUNCHER_TEXT.encode("utf-8"), 0o755)
             tar_add_bytes(

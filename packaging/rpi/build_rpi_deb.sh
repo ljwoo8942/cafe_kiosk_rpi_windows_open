@@ -47,6 +47,10 @@ cp "$ROOT_DIR/requirements-rpi.txt" "$APP_DIR/"
 cp "$ROOT_DIR/install_raspberry_pi.sh" "$APP_DIR/"
 cp "$ROOT_DIR/uninstall_raspberry_pi.sh" "$APP_DIR/"
 cp "$ROOT_DIR/run_raspberry_pi.sh" "$APP_DIR/"
+if [ -d "$ROOT_DIR/assets" ]; then
+  mkdir -p "$APP_DIR/assets"
+  cp -a "$ROOT_DIR/assets/." "$APP_DIR/assets/"
+fi
 mkdir -p "$APP_DIR/cafe_kiosk"
 cp -a "$ROOT_DIR/cafe_kiosk/." "$APP_DIR/cafe_kiosk/"
 find "$APP_DIR/cafe_kiosk" -type d \( \
@@ -79,6 +83,7 @@ Name=BEAN & BREW Cafe Kiosk
 Comment=Voice guided cafe kiosk
 Exec=/usr/local/bin/cafe-kiosk
 Path=/opt/cafe-kiosk
+Icon=/opt/cafe-kiosk/assets/app_icon.png
 Terminal=false
 Categories=Utility;
 EOF_DESKTOP

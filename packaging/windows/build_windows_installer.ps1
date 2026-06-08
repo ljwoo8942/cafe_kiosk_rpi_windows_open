@@ -76,6 +76,11 @@ function New-PortableZip {
         Copy-ProjectFile -RelativePath $file -TargetRoot $stage
     }
 
+    $assetsSrc = Join-Path $Root "assets"
+    if (Test-Path -LiteralPath $assetsSrc) {
+        Copy-Item -Path $assetsSrc -Destination (Join-Path $stage "assets") -Recurse -Force
+    }
+
     Copy-Item -Path (Join-Path $Root "cafe_kiosk\*") -Destination (Join-Path $stage "cafe_kiosk") -Recurse -Force
     Get-ChildItem -LiteralPath (Join-Path $stage "cafe_kiosk") -Recurse -Directory -Force |
         Where-Object { $_.Name -in @("__pycache__", "tts_cache", ".vs", ".vscode") } |
