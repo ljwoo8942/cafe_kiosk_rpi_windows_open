@@ -1937,8 +1937,26 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
     pw, ph = _center_popup_on_owner(popup, owner, pw, ph)
     small = ph < 300 or pw < 360
     auth_done = {"value": False}
+    auth_pending = {"value": False}
+
+    def _lock_auth_controls() -> None:
+        """저장/초기화 후 설정창 전환 대기 중 중복 입력을 막는다."""
+        def _walk(widget: tk.Misc) -> None:
+            for child in widget.winfo_children():
+                try:
+                    if "state" in child.keys():
+                        child.configure(state="disabled")
+                except tk.TclError:
+                    pass
+                _walk(child)
+        try:
+            _walk(popup)
+        except tk.TclError:
+            pass
 
     def _close() -> None:
+        if auth_pending["value"] and not auth_done["value"]:
+            return
         if not _widget_exists(popup):
             try:
                 show_admin_auth_popup._popup = None
@@ -1973,6 +1991,16 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
             owner.after(80, _open_settings_after_auth)
         except tk.TclError:
             _open_settings_after_auth()
+
+    def _schedule_finish_auth(delay_ms: int) -> None:
+        if auth_done["value"] or auth_pending["value"]:
+            return
+        auth_pending["value"] = True
+        _lock_auth_controls()
+        try:
+            popup.after(max(0, int(delay_ms)), _finish_auth)
+        except tk.TclError:
+            _finish_auth()
 
     def _clear_body() -> None:
         for child in popup.winfo_children():
@@ -2052,10 +2080,7 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
                 return
             _set_admin_password(new_pw)
             status_var.set("새 관리자 비밀번호가 저장되었습니다. 설정 창을 엽니다.")
-            try:
-                popup.after(350 if IS_RPI else 120, _finish_auth)
-            except tk.TclError:
-                _finish_auth()
+            _schedule_finish_auth(350 if IS_RPI else 120)
 
         tk.Button(btn_row, text="저장",
                   font=(FONT_UI, _fs(10 if new_small else 11), "bold"),
@@ -2120,10 +2145,7 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
         if password == ADMIN_MASTER_KEY:
             _reset_admin_password()
             status_var.set("관리자 비밀번호가 초기화되었습니다. 설정 창을 엽니다.")
-            try:
-                popup.after(350 if IS_RPI else 120, _finish_auth)
-            except tk.TclError:
-                _finish_auth()
+            _schedule_finish_auth(350 if IS_RPI else 120)
             return
         if not password:
             status_var.set("비밀번호를 입력해 주세요.")
@@ -2135,7 +2157,7 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
                 status_var.set("초기 비밀번호가 올바르지 않습니다.")
             return
         if _verify_admin_password(password):
-            _finish_auth()
+            _schedule_finish_auth(0)
         else:
             status_var.set("비밀번호가 올바르지 않습니다.")
 
