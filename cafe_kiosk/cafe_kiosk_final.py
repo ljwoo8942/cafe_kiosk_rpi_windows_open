@@ -191,6 +191,54 @@ def _make_log_handler(path: str, level: int) -> RotatingFileHandler:
     return handler
 
 
+def _set_log_dir(path: str) -> None:
+    """로그 저장 경로를 한 번에 갱신한다."""
+    global LOG_DIR, APP_LOG_PATH, ERROR_LOG_PATH, SPEECH_LOG_PATH, UPDATE_LOG_PATH
+    LOG_DIR = path
+    APP_LOG_PATH = os.path.join(LOG_DIR, "app.log")
+    ERROR_LOG_PATH = os.path.join(LOG_DIR, "error.log")
+    SPEECH_LOG_PATH = os.path.join(LOG_DIR, "speech.log")
+    UPDATE_LOG_PATH = os.path.join(LOG_DIR, "update.log")
+
+
+def _install_file_log_handlers() -> str:
+    """사용 가능한 로그 경로를 찾아 파일 핸들러를 설치한다."""
+    candidates = [
+        LOG_DIR,
+        os.path.join(PROJECT_DIR, "logs"),
+        os.path.join(tempfile.gettempdir(), "bean_brew_cafe_kiosk_logs"),
+    ]
+    seen: set[str] = set()
+    last_error: Exception | None = None
+
+    for directory in candidates:
+        directory = os.path.abspath(directory)
+        if directory in seen:
+            continue
+        seen.add(directory)
+        try:
+            _set_log_dir(directory)
+            os.makedirs(LOG_DIR, exist_ok=True)
+            APP_LOGGER.addHandler(_make_log_handler(APP_LOG_PATH, logging.INFO))
+            ERROR_LOGGER.addHandler(_make_log_handler(ERROR_LOG_PATH, logging.ERROR))
+            SPEECH_LOGGER.addHandler(_make_log_handler(SPEECH_LOG_PATH, logging.INFO))
+            UPDATE_LOGGER.addHandler(_make_log_handler(UPDATE_LOG_PATH, logging.INFO))
+            return LOG_DIR
+        except OSError as exc:
+            last_error = exc
+            for logger in (APP_LOGGER, ERROR_LOGGER, SPEECH_LOGGER, UPDATE_LOGGER):
+                logger.handlers.clear()
+
+    for logger in (APP_LOGGER, ERROR_LOGGER, SPEECH_LOGGER, UPDATE_LOGGER):
+        logger.addHandler(logging.NullHandler())
+    if last_error is not None:
+        try:
+            sys.__stderr__.write(f"Log file setup failed: {last_error}\n")
+        except Exception:
+            pass
+    return LOG_DIR
+
+
 def _safe_read_version_file() -> str:
     try:
         with open(APP_VERSION_FILE, "r", encoding="utf-8") as fp:
@@ -201,28 +249,16 @@ def _safe_read_version_file() -> str:
 
 def setup_logging() -> None:
     """앱/오류/음성/업데이트 로그 파일과 예외 자동 기록을 설정한다."""
-    global _LOGGING_READY, LOG_DIR, APP_LOG_PATH, ERROR_LOG_PATH, SPEECH_LOG_PATH, UPDATE_LOG_PATH
+    global _LOGGING_READY
     if _LOGGING_READY:
         return
 
-    try:
-        os.makedirs(LOG_DIR, exist_ok=True)
-    except OSError:
-        LOG_DIR = os.path.join(PROJECT_DIR, "logs")
-        APP_LOG_PATH = os.path.join(LOG_DIR, "app.log")
-        ERROR_LOG_PATH = os.path.join(LOG_DIR, "error.log")
-        SPEECH_LOG_PATH = os.path.join(LOG_DIR, "speech.log")
-        UPDATE_LOG_PATH = os.path.join(LOG_DIR, "update.log")
-        os.makedirs(LOG_DIR, exist_ok=True)
     for logger in (APP_LOGGER, ERROR_LOGGER, SPEECH_LOGGER, UPDATE_LOGGER):
         logger.setLevel(logging.DEBUG)
         logger.propagate = False
         logger.handlers.clear()
 
-    APP_LOGGER.addHandler(_make_log_handler(APP_LOG_PATH, logging.INFO))
-    ERROR_LOGGER.addHandler(_make_log_handler(ERROR_LOG_PATH, logging.ERROR))
-    SPEECH_LOGGER.addHandler(_make_log_handler(SPEECH_LOG_PATH, logging.INFO))
-    UPDATE_LOGGER.addHandler(_make_log_handler(UPDATE_LOG_PATH, logging.INFO))
+    _install_file_log_handlers()
 
     try:
         sys.stdout = _TeeTextStream(sys.stdout, APP_LOGGER, logging.INFO)
