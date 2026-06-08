@@ -1936,19 +1936,43 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
     ph = max(260, min(360, base_h - 20))
     pw, ph = _center_popup_on_owner(popup, owner, pw, ph)
     small = ph < 300 or pw < 360
+    auth_done = {"value": False}
 
     def _close() -> None:
         if not _widget_exists(popup):
+            try:
+                show_admin_auth_popup._popup = None
+            except Exception:
+                pass
             return
         try:
             popup.grab_release()
         except tk.TclError:
             pass
-        popup.destroy()
+        try:
+            popup.destroy()
+        except tk.TclError:
+            pass
+        try:
+            show_admin_auth_popup._popup = None
+        except Exception:
+            pass
 
     def _finish_auth() -> None:
+        if auth_done["value"]:
+            return
+        auth_done["value"] = True
         _close()
-        on_authenticated()
+        def _open_settings_after_auth() -> None:
+            try:
+                on_authenticated()
+            except Exception as exc:
+                log_error_event(f"Open settings after admin auth failed: {exc}")
+
+        try:
+            owner.after(80, _open_settings_after_auth)
+        except tk.TclError:
+            _open_settings_after_auth()
 
     def _clear_body() -> None:
         for child in popup.winfo_children():
@@ -2027,12 +2051,11 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
                 status_var.set("초기 비밀번호 또는 마스터키와 같은 값은 사용할 수 없습니다.")
                 return
             _set_admin_password(new_pw)
-            messagebox.showinfo(
-                "비밀번호 등록",
-                "새 관리자 비밀번호가 저장되었습니다.\n설정 창을 엽니다.",
-                parent=popup,
-            )
-            _finish_auth()
+            status_var.set("새 관리자 비밀번호가 저장되었습니다. 설정 창을 엽니다.")
+            try:
+                popup.after(350 if IS_RPI else 120, _finish_auth)
+            except tk.TclError:
+                _finish_auth()
 
         tk.Button(btn_row, text="저장",
                   font=(FONT_UI, _fs(10 if new_small else 11), "bold"),
@@ -2096,12 +2119,11 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
         password = password_var.get().strip()
         if password == ADMIN_MASTER_KEY:
             _reset_admin_password()
-            messagebox.showinfo(
-                "비밀번호 초기화",
-                "관리자 비밀번호가 초기화되었습니다.\n설정 창을 엽니다.",
-                parent=popup,
-            )
-            _finish_auth()
+            status_var.set("관리자 비밀번호가 초기화되었습니다. 설정 창을 엽니다.")
+            try:
+                popup.after(350 if IS_RPI else 120, _finish_auth)
+            except tk.TclError:
+                _finish_auth()
             return
         if not password:
             status_var.set("비밀번호를 입력해 주세요.")
@@ -6927,6 +6949,7 @@ class CafeKioskApp:
         x = parent.winfo_rootx() + max(0, parent.winfo_width() - win_w - _px(18))
         y = parent.winfo_rooty() + _px(58)
         win.geometry(f"{win_w}x{win_h}+{x}+{y}")
+        _safe_lift(win, parent)
 
         def _close_settings() -> None:
             self._flush_pending_settings_save()
