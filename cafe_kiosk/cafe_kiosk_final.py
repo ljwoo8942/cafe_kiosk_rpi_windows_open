@@ -9444,6 +9444,9 @@ class KioskScreen:
         self.on_cancel_log      = on_cancel_log
         self.settings_controller = settings_controller
         self.display_size       = display_size
+        _dw = int(display_size[0]) if display_size else 0
+        _dh = int(display_size[1]) if display_size else 0
+        self._compact_layout = bool(TINY_SCREEN or (_dw and _dh and _dw <= 1050 and _dh <= 620))
 
         # 현재 선택된 카테고리 (초기값: 첫 번째 카테고리)
         self._current_cat = list(MENU_CATEGORIES.keys())[0]
@@ -9490,35 +9493,37 @@ class KioskScreen:
         """키오스크 탭의 모든 위젯을 생성하고 container 안에 배치한다."""
 
         self.container.configure(bg=self.C_BG)
+        compact = self._compact_layout
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         # 헤더 (키오스크 스타일: 짙은 커피 브라운)
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        header = tk.Frame(self.container, bg=self.C_HEADER, pady=_px(10))
+        header = tk.Frame(self.container, bg=self.C_HEADER, pady=_px(4 if compact else 10))
         header.pack(fill="x")
 
         tk.Label(header,
                  text="BEAN & BREW",
-                 font=(FONT_HEADER, _fs(20), "bold"),
-                 bg=self.C_HEADER, fg="#f5deb3").pack(side="left", padx=_px(20))
+                 font=(FONT_HEADER, _fs(15 if compact else 20), "bold"),
+                 bg=self.C_HEADER, fg="#f5deb3").pack(side="left", padx=_px(10 if compact else 20))
 
-        tk.Label(header,
-                 text="원하시는 메뉴를 선택해 주세요",
-                 font=(FONT_UI, _fs(11)),
-                 bg=self.C_HEADER, fg="#c9a97a").pack(side="left")
+        if not compact:
+            tk.Label(header,
+                     text="원하시는 메뉴를 선택해 주세요",
+                     font=(FONT_UI, _fs(11)),
+                     bg=self.C_HEADER, fg="#c9a97a").pack(side="left")
 
         if self.settings_controller is not None:
             self._cfg_btn = tk.Button(
                 header, text="⚙ 설정",
-                font=(FONT_UI, _fs(12), "bold"),
+                font=(FONT_UI, _fs(10 if compact else 12), "bold"),
                 bg=self.C_HEADER, fg="#f5deb3",
                 activebackground="#5c3317", activeforeground="#f5deb3",
-                relief="flat", padx=_px(10), pady=_px(2), cursor="hand2",
+                relief="flat", padx=_px(6 if compact else 10), pady=_px(1 if compact else 2), cursor="hand2",
                 command=lambda: self.settings_controller._toggle_settings(
                     self.container, self._cfg_btn
                 )
             )
-            self._cfg_btn.pack(side="right", padx=_px(12))
+            self._cfg_btn.pack(side="right", padx=_px(6 if compact else 12))
             register_btn = getattr(self.settings_controller, "register_settings_button", None)
             if callable(register_btn):
                 register_btn(self._cfg_btn)
@@ -9528,25 +9533,26 @@ class KioskScreen:
         # 각 버튼을 클릭하면 _select_category() 가 호출되어
         # 메뉴 그리드를 해당 카테고리로 교체한다.
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        cat_bar = tk.Frame(self.container, bg=self.C_CAT_BAR, pady=_px(8))
+        cat_bar = tk.Frame(self.container, bg=self.C_CAT_BAR, pady=_px(3 if compact else 8))
         cat_bar.pack(fill="x")
 
         for cat in MENU_CATEGORIES:
             is_selected = (cat == self._current_cat)
             btn = tk.Button(
                 cat_bar,
-                text=f"  {cat}  ",
-                font=(FONT_UI, _fs(11), "bold"),
+                text=cat if compact else f"  {cat}  ",
+                font=(FONT_UI, _fs(9 if compact else 11), "bold"),
                 bg=self.C_CAT_SEL if is_selected else self.C_CAT_BTN,
                 fg=self.C_CAT_STXT if is_selected else self.C_CAT_TXT,
                 activebackground=self.C_CAT_SEL,
                 activeforeground=self.C_CAT_STXT,
                 relief="flat",
-                padx=10, pady=7,
+                padx=5 if compact else 10,
+                pady=3 if compact else 7,
                 cursor="hand2",
                 command=lambda c=cat: self._select_category(c)   # closure 방지
             )
-            btn.pack(side="left", padx=6)
+            btn.pack(side="left", padx=3 if compact else 6)
             self._cat_btns[cat] = btn   # 색상 전환을 위해 참조 저장
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -9558,7 +9564,8 @@ class KioskScreen:
         # ── 좌측: 메뉴 카드 그리드 (스크롤 가능) ──────
         grid_outer = tk.Frame(body, bg=self.C_BG)
         grid_outer.pack(side="left", fill="both", expand=True,
-                        padx=(12, 6), pady=12)
+                        padx=(_px(4 if compact else 12), _px(3 if compact else 6)),
+                        pady=_px(4 if compact else 12))
 
         # Canvas + 내부 Frame 구조: 카드가 많을 때 스크롤 지원
         self._grid_canvas = tk.Canvas(grid_outer, bg=self.C_BG,
@@ -9595,22 +9602,26 @@ class KioskScreen:
         _scr_w = self.display_size[0] if self.display_size else self.root.winfo_screenwidth()
         _scr_h = self.display_size[1] if self.display_size else self.root.winfo_screenheight()
         _per_win_w = _scr_w // 2 if _scr_w >= _scr_h * 3 else _scr_w
-        _cart_w = max(250, _px(160 if _per_win_w < 900 else 200 if _per_win_w < 1200 else 270))
+        _min_cart = 214 if compact else 250
+        _cart_base = 142 if compact else 160 if _per_win_w < 900 else 200 if _per_win_w < 1200 else 270
+        _cart_w = max(_min_cart, _px(_cart_base))
         cart_panel = tk.Frame(body, bg=self.C_CART_BG, width=_cart_w)
         cart_panel.pack(side="right", fill="y")
         cart_panel.pack_propagate(False)   # 고정 너비 유지
 
         # 장바구니 패널 헤더
         tk.Label(cart_panel, text="주문 내역",
-                 font=(FONT_UI, _fs(14), "bold"),
+                 font=(FONT_UI, _fs(11 if compact else 14), "bold"),
                  bg=self.C_CART_BG, fg=self.C_HEADER,
-                 pady=_px(12)).pack(fill="x", padx=10)
+                 pady=_px(5 if compact else 12)).pack(fill="x", padx=_px(6 if compact else 10))
 
         tk.Frame(cart_panel, bg=self.C_CART_SEP, height=2).pack(fill="x")
 
         # 장바구니 항목이 많아질 때도 스크롤 가능하도록 Canvas 안에 배치
         cart_scroll_area = tk.Frame(cart_panel, bg=self.C_CART_BG)
-        cart_scroll_area.pack(fill="both", expand=True, padx=8, pady=6)
+        cart_scroll_area.pack(fill="both", expand=True,
+                              padx=_px(4 if compact else 8),
+                              pady=_px(2 if compact else 6))
         self._kiosk_cart_canvas = tk.Canvas(
             cart_scroll_area, bg=self.C_CART_BG, highlightthickness=0)
         kiosk_cart_sb = tk.Scrollbar(
@@ -9637,52 +9648,52 @@ class KioskScreen:
         # 합계 금액 표시 레이블
         self._kiosk_total_var = tk.StringVar(value="합계:  0원")
         tk.Label(cart_panel, textvariable=self._kiosk_total_var,
-                 font=(FONT_UI, _fs(14), "bold"),
+                 font=(FONT_UI, _fs(11 if compact else 14), "bold"),
                  bg=self.C_CART_BG, fg=self.C_TOTAL,
-                 pady=_px(10)).pack(fill="x", padx=10)
+                 pady=_px(4 if compact else 10)).pack(fill="x", padx=_px(6 if compact else 10))
 
         # ── 장바구니 하단 액션 버튼 ───────────────────
-        act_frame = tk.Frame(cart_panel, bg=self.C_CART_BG, pady=6)
-        act_frame.pack(fill="x", padx=10)
+        act_frame = tk.Frame(cart_panel, bg=self.C_CART_BG, pady=_px(2 if compact else 6))
+        act_frame.pack(fill="x", padx=_px(6 if compact else 10))
 
         # [주문하기]: 확인 팝업 → 결제 처리
         self._order_button = tk.Button(act_frame,
                                        text="주문하기",
-                                       font=(FONT_UI, _fs(13), "bold"),
+                                       font=(FONT_UI, _fs(11 if compact else 13), "bold"),
                                        bg=self.C_ORDER_BTN, fg="white",
                                        activebackground=self.C_ORDER_HV, activeforeground="white",
                                        disabledforeground="#f4d7c7",
-                                       relief="flat", pady=12, cursor="hand2",
+                                       relief="flat", pady=5 if compact else 12, cursor="hand2",
                                        command=self._on_order_confirm)
-        self._order_button.pack(fill="x", pady=(0, 8))
+        self._order_button.pack(fill="x", pady=(0, 4 if compact else 8))
 
         # [전체 취소]: 장바구니 비우기
         tk.Button(act_frame,
                   text="전체 취소",
-                  font=(FONT_UI, _fs(11)),
+                  font=(FONT_UI, _fs(10 if compact else 11)),
                   bg=self.C_CANCEL, fg="white",
                   activebackground="#6a1515", activeforeground="white",
-                  relief="flat", pady=8, cursor="hand2",
+                  relief="flat", pady=4 if compact else 8, cursor="hand2",
                   command=self._on_cancel
-                  ).pack(fill="x", pady=(0, 8))
+                  ).pack(fill="x", pady=(0, 4 if compact else 8))
 
         # [추천 메뉴]
         tk.Button(act_frame,
                   text="추천 메뉴",
-                  font=(FONT_UI, _fs(11), "bold"),
+                  font=(FONT_UI, _fs(10 if compact else 11), "bold"),
                   bg="#5c4a1e", fg="#ffd700",
                   activebackground="#3d3010", activeforeground="#ffd700",
-                  relief="flat", pady=10, cursor="hand2",
+                  relief="flat", pady=4 if compact else 10, cursor="hand2",
                   command=self._show_recommend
-                  ).pack(fill="x", pady=(0, 8))
+                  ).pack(fill="x", pady=(0, 4 if compact else 8))
 
         # [직원 호출]
         tk.Button(act_frame,
                   text="직원 호출",
-                  font=(FONT_UI, _fs(11), "bold"),
+                  font=(FONT_UI, _fs(10 if compact else 11), "bold"),
                   bg="#1565c0", fg="white",
                   activebackground="#0d47a1", activeforeground="white",
-                  relief="flat", pady=10, cursor="hand2",
+                  relief="flat", pady=4 if compact else 10, cursor="hand2",
                   command=lambda: call_staff(self.root)
                   ).pack(fill="x")
 
@@ -10521,7 +10532,10 @@ def main() -> None:
                       not root.attributes('-fullscreen')))
         root.title("BEAN & BREW - 카페 주문 시스템")
 
-        switch_h = max(52, min(68, int(sh * 0.12)))
+        # 800x480급 단일 화면에서는 전환바가 조금만 커도 키오스크 하단 주문 버튼을 밀어낸다.
+        # 그래서 터치 가능한 최소 높이를 유지하되 전체 화면의 약 7.5% 안쪽으로 제한한다.
+        switch_h = max(38, min(46, int(sh * 0.075)))
+        content_h = max(1, sh - switch_h)
         switch_bar = tk.Frame(root, bg="#111827", height=switch_h)
         switch_bar.pack(fill="x", side="top")
         switch_bar.pack_propagate(False)
@@ -10566,28 +10580,28 @@ def main() -> None:
             btn = tk.Button(
                 switch_bar,
                 text=text,
-                font=(FONT_UI, _fs(12), "bold"),
+                font=(FONT_UI, _fs(10 if TINY_SCREEN else 11), "bold"),
                 relief="flat",
                 bd=0,
                 highlightthickness=0,
-                padx=_px(8),
+                padx=_px(6),
                 pady=0,
                 cursor="hand2",
                 command=lambda n=name: _show_small_screen_tab(n),
             )
-            btn.grid(row=0, column=col, sticky="nsew", padx=(2, 1), pady=3)
+            btn.grid(row=0, column=col, sticky="nsew", padx=(2, 1), pady=2)
             switch_buttons[name] = btn
             return btn
 
-        _make_switch_button("음성 + 터치 주문", "voice", 0)
-        _make_switch_button("메뉴 키오스크", "kiosk", 1)
+        _make_switch_button("음성+터치" if TINY_SCREEN else "음성 + 터치 주문", "voice", 0)
+        _make_switch_button("키오스크" if TINY_SCREEN else "메뉴 키오스크", "kiosk", 1)
 
         shared["voice"] = CafeKioskApp(root, voice_tab, on_order_change, on_order_complete)
         shared["voice"].on_availability_change = on_availability_change
         shared["kiosk"]  = KioskScreen(root, kiosk_tab, on_order_change, on_order_complete,
                                         on_cancel_log=shared["voice"].reset_log,
                                         settings_controller=shared["voice"],
-                                        display_size=(sw, sh))
+                                        display_size=(sw, content_h))
         _show_small_screen_tab("voice")
 
     else:
