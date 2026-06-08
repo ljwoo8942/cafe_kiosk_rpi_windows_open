@@ -11,25 +11,25 @@
 - Python 3.13.12 기준으로 개발 및 테스트
 - Raspberry Pi 5인치 / 7인치 터치 디스플레이 구성 지원
 
-Raspberry Pi에서는 `xrandr`로 연결된 모니터 크기와 위치를 감지해 작은 화면은 음성+터치 주문 창, 큰 화면은 키오스크 주문 창으로 자동 배치합니다. 단일 소형 화면에서는 탭 기반 풀스크린 UI로 실행됩니다.
+Raspberry Pi에서는 `xrandr`로 연결된 모니터 크기와 위치를 감지해 작은 화면은 음성+터치 주문 창, 큰 화면은 키오스크 주문 창으로 자동 배치합니다. 단일 소형 화면에서는 상단 전환 버튼 기반 풀스크린 UI로 실행됩니다.
 
 ## 다운로드
 
 최신 설치 파일은 GitHub Releases에서 받을 수 있습니다. 일반 사용자는 아래 파일만 다운로드하면 됩니다.
 
-- Windows: [CafeKiosk-Windows-Setup-1.3.0.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.3.0/CafeKiosk-Windows-Setup-1.3.0.exe)
-- Raspberry Pi 더블클릭 설치: [CafeKiosk-RPi-Installer-1.3.0.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.3.0/CafeKiosk-RPi-Installer-1.3.0.zip)
-- Raspberry Pi 직접 설치: [cafe-kiosk-rpi_1.3.0_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.3.0/cafe-kiosk-rpi_1.3.0_all.deb)
-- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.3.0.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.3.0/CafeKiosk-Windows-Portable-1.3.0.zip)
+- Windows: [CafeKiosk-Windows-Setup-1.3.1.exe](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.3.1/CafeKiosk-Windows-Setup-1.3.1.exe)
+- Raspberry Pi 더블클릭 설치: [CafeKiosk-RPi-Installer-1.3.1.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.3.1/CafeKiosk-RPi-Installer-1.3.1.zip)
+- Raspberry Pi 직접 설치: [cafe-kiosk-rpi_1.3.1_all.deb](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.3.1/cafe-kiosk-rpi_1.3.1_all.deb)
+- Windows 무설치 압축본: [CafeKiosk-Windows-Portable-1.3.1.zip](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/download/v1.3.1/CafeKiosk-Windows-Portable-1.3.1.zip)
 
 릴리즈 페이지:
-[Cafe Kiosk v1.3.0](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.3.0)
+[Cafe Kiosk v1.3.1](https://github.com/ljwoo8942/cafe_kiosk_rpi_windows_open/releases/tag/v1.3.1)
 
 ## 설치 방법
 
 Windows:
 
-1. `CafeKiosk-Windows-Setup-1.3.0.exe`를 다운로드합니다.
+1. `CafeKiosk-Windows-Setup-1.3.1.exe`를 다운로드합니다.
 2. 설치 파일을 실행합니다.
 3. 설치가 끝나면 바탕화면의 `BEAN & BREW Cafe Kiosk` 바로가기로 실행합니다.
 
@@ -45,7 +45,7 @@ Windows 삭제:
 
 Raspberry Pi / Linux 더블클릭 설치:
 
-1. `CafeKiosk-RPi-Installer-1.3.0.zip`을 다운로드합니다.
+1. `CafeKiosk-RPi-Installer-1.3.1.zip`을 다운로드합니다.
 2. 압축을 풉니다.
 3. `설치하기.desktop` 파일을 더블클릭합니다.
 4. 실행 허용 또는 신뢰 확인 창이 뜨면 허용합니다.
@@ -57,11 +57,11 @@ Raspberry Pi / Linux 더블클릭 설치:
 
 Raspberry Pi / Linux 직접 설치:
 
-1. `cafe-kiosk-rpi_1.3.0_all.deb`를 다운로드합니다.
+1. `cafe-kiosk-rpi_1.3.1_all.deb`를 다운로드합니다.
 2. 파일이 있는 폴더에서 아래 명령을 실행합니다.
 
 ```bash
-sudo apt install ./cafe-kiosk-rpi_1.3.0_all.deb
+sudo apt install ./cafe-kiosk-rpi_1.3.1_all.deb
 cafe-kiosk
 ```
 

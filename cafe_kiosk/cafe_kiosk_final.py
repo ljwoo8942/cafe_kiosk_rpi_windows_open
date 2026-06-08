@@ -25,7 +25,7 @@
 [화면 레이아웃 — 자동 선택]
     모드 A  듀얼 모니터  → 각 모니터에 윈도우 하나씩
     모드 B  넓은 싱글 모니터(≥1200px) → 좌/우 절반 분할
-    모드 C  소형 화면(RPi 7인치 등)   → 하나의 창에 탭 전환
+    모드 C  소형 화면(RPi 7인치 등)   → 하나의 창에 상단 전환 버튼
             RPi 에서는 자동 풀스크린, Escape 키로 해제
 
 [윈도우 구성]
@@ -10356,7 +10356,7 @@ def main() -> None:
     모드 B — 싱글 모니터 + 넓은 화면 (≥1200px):
         좌/우 절반 분할 (기존 동작)
     모드 C — 소형 화면 (<1200px, 라즈베리파이 등):
-        하나의 창에 탭(Notebook) 으로 전환, RPi 는 풀스크린
+        하나의 창에 큰 전환 버튼으로 화면 전환, RPi 는 풀스크린
 
     공유 콜백(on_order_change):
         두 윈도우가 order_list 를 공유하므로 한쪽에서 주문이 변경되면
@@ -10514,20 +10514,73 @@ def main() -> None:
         )
 
     elif SMALL_SCREEN:
-        # ── 모드 C: 소형 화면 — 탭 모드 ─────────────────
+        # ── 모드 C: 소형 화면 — 단일 창 전환 버튼 모드 ───────────────
         if IS_RPI:
             root.attributes('-fullscreen', True)
             root.bind('<Escape>', lambda e: root.attributes('-fullscreen',
                       not root.attributes('-fullscreen')))
         root.title("BEAN & BREW - 카페 주문 시스템")
 
-        notebook = ttk.Notebook(root)
-        notebook.pack(fill="both", expand=True)
+        switch_h = max(52, min(68, int(sh * 0.12)))
+        switch_bar = tk.Frame(root, bg="#111827", height=switch_h)
+        switch_bar.pack(fill="x", side="top")
+        switch_bar.pack_propagate(False)
+        switch_bar.grid_columnconfigure(0, weight=1, uniform="screen_switch")
+        switch_bar.grid_columnconfigure(1, weight=1, uniform="screen_switch")
+        switch_bar.grid_rowconfigure(0, weight=1)
 
-        voice_tab = tk.Frame(notebook, bg="#1a1a2e")
-        kiosk_tab = tk.Frame(notebook, bg="#faf7f2")
-        notebook.add(voice_tab, text="음성+터치")
-        notebook.add(kiosk_tab, text="키오스크")
+        content_area = tk.Frame(root, bg="#1a1a2e")
+        content_area.pack(fill="both", expand=True, side="top")
+
+        voice_tab = tk.Frame(content_area, bg="#1a1a2e")
+        kiosk_tab = tk.Frame(content_area, bg="#faf7f2")
+
+        switch_buttons: dict[str, tk.Button] = {}
+
+        def _show_small_screen_tab(name: str) -> None:
+            voice_tab.pack_forget()
+            kiosk_tab.pack_forget()
+
+            selected_bg = "#8a4b22"
+            normal_bg = "#263241"
+            selected_fg = "#fff7ed"
+            normal_fg = "#dbeafe"
+
+            for key, button in switch_buttons.items():
+                button.configure(
+                    bg=selected_bg if key == name else normal_bg,
+                    fg=selected_fg if key == name else normal_fg,
+                    activebackground="#9a5a2f" if key == name else "#334155",
+                    activeforeground="#ffffff",
+                )
+
+            if name == "kiosk":
+                kiosk_tab.pack(fill="both", expand=True)
+                if shared["kiosk"] is not None:
+                    root.after(80, shared["kiosk"]._schedule_menu_grid_render)
+                    root.after(120, shared["kiosk"]._refresh_cart)
+            else:
+                voice_tab.pack(fill="both", expand=True)
+
+        def _make_switch_button(text: str, name: str, col: int) -> tk.Button:
+            btn = tk.Button(
+                switch_bar,
+                text=text,
+                font=(FONT_UI, _fs(12), "bold"),
+                relief="flat",
+                bd=0,
+                highlightthickness=0,
+                padx=_px(8),
+                pady=0,
+                cursor="hand2",
+                command=lambda n=name: _show_small_screen_tab(n),
+            )
+            btn.grid(row=0, column=col, sticky="nsew", padx=(2, 1), pady=3)
+            switch_buttons[name] = btn
+            return btn
+
+        _make_switch_button("음성 + 터치 주문", "voice", 0)
+        _make_switch_button("메뉴 키오스크", "kiosk", 1)
 
         shared["voice"] = CafeKioskApp(root, voice_tab, on_order_change, on_order_complete)
         shared["voice"].on_availability_change = on_availability_change
@@ -10535,6 +10588,7 @@ def main() -> None:
                                         on_cancel_log=shared["voice"].reset_log,
                                         settings_controller=shared["voice"],
                                         display_size=(sw, sh))
+        _show_small_screen_tab("voice")
 
     else:
         # ── 모드 A/B: 듀얼 윈도우 (듀얼 모니터 또는 넓은 싱글 모니터) ──
