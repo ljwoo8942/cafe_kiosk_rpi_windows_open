@@ -4075,10 +4075,69 @@ def _resolve_ambiguous_choice(text: str, choices: tuple[str, ...]) -> str | None
 
 DB_PATH = os.path.join(USER_CONFIG_DIR, "cafe_kiosk.db")
 LEGACY_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cafe_kiosk.db")
+_DB_PATH_READY = False
+
+
+def _sqlite_write_probe(path: str) -> tuple[bool, str]:
+    """SQLite가 실제로 해당 DB 파일에 쓸 수 있는지 확인한다."""
+    conn: sqlite3.Connection | None = None
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        conn = sqlite3.connect(path, timeout=2)
+        conn.execute("PRAGMA busy_timeout=2000")
+        conn.execute("CREATE TABLE IF NOT EXISTS __write_probe (id INTEGER)")
+        conn.execute("DROP TABLE __write_probe")
+        conn.commit()
+        return True, ""
+    except (OSError, sqlite3.Error) as exc:
+        try:
+            if conn is not None:
+                conn.rollback()
+        except sqlite3.Error:
+            pass
+        return False, str(exc)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+
+
+def _quarantine_unwritable_db(path: str, reason: str) -> bool:
+    """쓰기 불가능한 DB를 백업 이름으로 분리한다."""
+    if not os.path.isfile(path):
+        return True
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = f"{path}.readonly_{stamp}.bak"
+    try:
+        os.replace(path, backup_path)
+        log_error_event(
+            f"Readonly DB moved aside: {path} -> {backup_path} | reason={reason}",
+            exc_info=False,
+        )
+        return True
+    except OSError as exc:
+        log_error_event(
+            f"Readonly DB quarantine failed: {path} | reason={reason} | error={exc}",
+            exc_info=False,
+        )
+        return False
+
+
+def _switch_to_temp_db(reason: str) -> None:
+    """사용자 설정 폴더 DB를 쓸 수 없을 때 임시 DB로 폴백한다."""
+    global DB_PATH
+    fallback_dir = os.path.join(tempfile.gettempdir(), "bean_brew_cafe_kiosk_data")
+    DB_PATH = os.path.join(fallback_dir, "cafe_kiosk.db")
+    log_error_event(f"DB path switched to temporary fallback: {DB_PATH} | reason={reason}", exc_info=False)
 
 
 def _ensure_user_db_path() -> None:
     """설치 폴더가 읽기 전용이어도 DB를 사용자 설정 폴더에 둘 수 있게 준비한다."""
+    global _DB_PATH_READY
+    if _DB_PATH_READY:
+        return
     try:
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
         if (not os.path.isfile(DB_PATH)
@@ -4087,6 +4146,20 @@ def _ensure_user_db_path() -> None:
             shutil.copy2(LEGACY_DB_PATH, DB_PATH)
     except OSError as exc:
         log_error_event(f"DB path preparation failed: {exc}")
+
+    ok, detail = _sqlite_write_probe(DB_PATH)
+    if not ok:
+        moved = _quarantine_unwritable_db(DB_PATH, detail)
+        if moved:
+            ok, detail = _sqlite_write_probe(DB_PATH)
+
+    if not ok:
+        _switch_to_temp_db(detail)
+        ok, detail = _sqlite_write_probe(DB_PATH)
+        if not ok:
+            log_error_event(f"Temporary DB write probe failed: {detail}", exc_info=False)
+
+    _DB_PATH_READY = True
 
 
 def _db_conn() -> sqlite3.Connection:
@@ -4104,74 +4177,76 @@ def init_db() -> None:
     이미 DB 파일이 존재하면 테이블 생성만 시도하고 데이터 중복 삽입은 IGNORE.
     """
     conn = _db_conn()
-    cur  = conn.cursor()
+    try:
+        cur  = conn.cursor()
 
-    # ── 테이블 생성 ────────────────────────────────────
-    cur.executescript("""
-        CREATE TABLE IF NOT EXISTS menu_items (
-            id       INTEGER PRIMARY KEY AUTOINCREMENT,
-            name     TEXT    NOT NULL UNIQUE,
-            price    INTEGER NOT NULL,
-            category TEXT    NOT NULL DEFAULT '',
-            emoji    TEXT    NOT NULL DEFAULT '☕'
-        );
+        # ── 테이블 생성 ────────────────────────────────────
+        cur.executescript("""
+            CREATE TABLE IF NOT EXISTS menu_items (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                name     TEXT    NOT NULL UNIQUE,
+                price    INTEGER NOT NULL,
+                category TEXT    NOT NULL DEFAULT '',
+                emoji    TEXT    NOT NULL DEFAULT '☕'
+            );
 
-        CREATE TABLE IF NOT EXISTS menu_keywords (
-            id      INTEGER PRIMARY KEY AUTOINCREMENT,
-            menu_id INTEGER NOT NULL REFERENCES menu_items(id),
-            keyword TEXT    NOT NULL UNIQUE
-        );
+            CREATE TABLE IF NOT EXISTS menu_keywords (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                menu_id INTEGER NOT NULL REFERENCES menu_items(id),
+                keyword TEXT    NOT NULL UNIQUE
+            );
 
-        CREATE TABLE IF NOT EXISTS orders (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            ordered_at TEXT    NOT NULL,
-            total      INTEGER NOT NULL
-        );
+            CREATE TABLE IF NOT EXISTS orders (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                ordered_at TEXT    NOT NULL,
+                total      INTEGER NOT NULL
+            );
 
-        CREATE TABLE IF NOT EXISTS order_items (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            order_id  INTEGER NOT NULL REFERENCES orders(id),
-            menu_name TEXT    NOT NULL,
-            price     INTEGER NOT NULL,
-            qty       INTEGER NOT NULL
-        );
+            CREATE TABLE IF NOT EXISTS order_items (
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id  INTEGER NOT NULL REFERENCES orders(id),
+                menu_name TEXT    NOT NULL,
+                price     INTEGER NOT NULL,
+                qty       INTEGER NOT NULL
+            );
 
-        CREATE TABLE IF NOT EXISTS voice_logs (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            logged_at    TEXT NOT NULL,
-            raw_text     TEXT NOT NULL,
-            matched_menu TEXT
-        );
-    """)
-    conn.commit()
+            CREATE TABLE IF NOT EXISTS voice_logs (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                logged_at    TEXT NOT NULL,
+                raw_text     TEXT NOT NULL,
+                matched_menu TEXT
+            );
+        """)
+        conn.commit()
 
-    # ── 초기 시드: 정식 메뉴명 삽입 ───────────────────
-    _name_to_cat = {}
-    for _cat, _names in MENU_CATEGORIES.items():
-        for _n in _names:
-            _name_to_cat[_n] = _cat
+        # ── 초기 시드: 정식 메뉴명 삽입 ───────────────────
+        _name_to_cat = {}
+        for _cat, _names in MENU_CATEGORIES.items():
+            for _n in _names:
+                _name_to_cat[_n] = _cat
 
-    for _name, (_n, _price) in MENU_BY_NAME.items():
-        _cat   = _name_to_cat.get(_name, "")
-        _emoji = MENU_EMOJIS.get(_name, "☕")
-        cur.execute(
-            "INSERT OR IGNORE INTO menu_items (name, price, category, emoji) VALUES (?,?,?,?)",
-            (_name, _price, _cat, _emoji)
-        )
-    conn.commit()
-
-    # ── 초기 시드: 자연어 키워드 삽입 ─────────────────
-    for _kw, (_mname, _) in MENU.items():
-        row = cur.execute(
-            "SELECT id FROM menu_items WHERE name=?", (_mname,)
-        ).fetchone()
-        if row:
+        for _name, (_n, _price) in MENU_BY_NAME.items():
+            _cat   = _name_to_cat.get(_name, "")
+            _emoji = MENU_EMOJIS.get(_name, "☕")
             cur.execute(
-                "INSERT OR IGNORE INTO menu_keywords (menu_id, keyword) VALUES (?,?)",
-                (row[0], _kw)
+                "INSERT OR IGNORE INTO menu_items (name, price, category, emoji) VALUES (?,?,?,?)",
+                (_name, _price, _cat, _emoji)
             )
-    conn.commit()
-    conn.close()
+        conn.commit()
+
+        # ── 초기 시드: 자연어 키워드 삽입 ─────────────────
+        for _kw, (_mname, _) in MENU.items():
+            row = cur.execute(
+                "SELECT id FROM menu_items WHERE name=?", (_mname,)
+            ).fetchone()
+            if row:
+                cur.execute(
+                    "INSERT OR IGNORE INTO menu_keywords (menu_id, keyword) VALUES (?,?)",
+                    (row[0], _kw)
+                )
+        conn.commit()
+    finally:
+        conn.close()
     print("✅  DB 초기화 완료:", DB_PATH)
     log_app_event(f"Database initialized: {DB_PATH}")
 
