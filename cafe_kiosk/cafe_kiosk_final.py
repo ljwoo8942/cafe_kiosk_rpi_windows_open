@@ -9797,6 +9797,12 @@ class KioskScreen:
         except Exception:
             cw = 0
         if cw <= 1:
+            try:
+                if not self.container.winfo_ismapped():
+                    self._rendered_grid_category = ""
+                    return
+            except tk.TclError:
+                return
             self._schedule_menu_grid_render(80)
             return
         cols, img_size, outer_pad, grid_gap, inner_pad, wrap_len = self._menu_grid_metrics(cw)
