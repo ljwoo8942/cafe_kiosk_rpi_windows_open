@@ -6347,6 +6347,22 @@ class CafeKioskApp:
         self.root.after(1200, self._install_session_activity_bindings)
         self.root.after(SESSION_IDLE_CHECK_INTERVAL_MS, self._check_session_idle)
 
+    def _request_order_change(self) -> None:
+        """장바구니/주문 UI 갱신 콜백을 Tk 메인 루프에서 실행한다."""
+        def _run() -> None:
+            try:
+                self.on_order_change()
+            except Exception as exc:
+                log_error_event(f"Voice window order refresh failed: {exc}")
+
+        try:
+            if threading.current_thread() is threading.main_thread():
+                _run()
+            else:
+                self.root.after(0, _run)
+        except tk.TclError:
+            pass
+
     def _install_session_activity_bindings(self) -> None:
         """터치/키보드/마우스 입력을 세션 활동으로 기록한다."""
         if self._session_activity_bound:
@@ -6450,7 +6466,7 @@ class CafeKioskApp:
             self._cancel_log_reset_after_tts()
             self._reset_log_on_next_interaction = False
             self._log_reset_generation += 1
-            self.on_order_change()
+            self._request_order_change()
             self.reset_log()
             self.set_status("준비 완료 - 메뉴를 터치하거나 말하기 버튼을 누르세요")
             self._last_session_activity = time.monotonic()
@@ -7401,6 +7417,13 @@ class CafeKioskApp:
         ※ tkinter 위젯 수정은 메인 스레드에서만 가능하므로
            after_idle(...) 로 연속 갱신 요청을 한 번으로 합친다.
         """
+        if threading.current_thread() is not threading.main_thread():
+            try:
+                self.root.after(0, self._refresh_cart_ui)
+            except tk.TclError:
+                pass
+            return
+
         if self._cart_refresh_pending:
             self._cart_refresh_requested = True
             return
@@ -7492,7 +7515,7 @@ class CafeKioskApp:
         def _add(option: str, actual_price: int) -> None:
             def _do():
                 if add_to_order_by_name(name, actual_price, option):
-                    self.on_order_change()
+                    self._request_order_change()
                     total = sum(i["qty"] for i in order_list)
                     label = f"{name}({option})" if option else name
                     self.log(f"\n👆  [터치] {label} 추가 — 총 {total}개")
@@ -7523,7 +7546,7 @@ class CafeKioskApp:
         self._mark_session_activity("cart_add")
         def _do():
             if add_to_order_by_name(name, price, option):
-                self.on_order_change()
+                self._request_order_change()
                 label = f"{name}({option})" if option else name
                 self.log(f"\n➕  {label} +1")
                 self.log(get_order_summary_text())
@@ -7547,7 +7570,7 @@ class CafeKioskApp:
             changed, old_label, new_label = update_order_item_options(index, option, actual_price)
             if not changed:
                 return
-            self.on_order_change()
+            self._request_order_change()
             self.log(f"\n⚙  옵션 수정: {old_label} → {new_label}")
             self.log(get_order_summary_text())
             speak(f"{name} 옵션이 변경되었습니다.")
@@ -7559,7 +7582,7 @@ class CafeKioskApp:
         self._mark_session_activity("cart_remove")
         def _do():
             remove_one_from_order(name, option)
-            self.on_order_change()
+            self._request_order_change()
             label = f"{name}({option})" if option else name
             self.log(f"\n➖  {label} -1")
             self.log(get_order_summary_text())
@@ -8396,7 +8419,7 @@ class CafeKioskApp:
                     f"  결제수단: {method}\n"
                     f"  영수증: {receipt_status}"
                 )
-            self.on_order_change()
+            self._request_order_change()
             self.log(f"\n📍  이용 방식 선택: {order_type}")
             self.log(f"\n💳  결제수단 선택: {method}")
             self.log(f"\n🧾  영수증: {'발행' if issue_receipt else '미발행'}")
@@ -8413,7 +8436,7 @@ class CafeKioskApp:
             self._invalidate_checkout_session()
             order_list.clear()
             self.state = self.STATE_ORDERING
-            self.on_order_change()   # 두 윈도우 동시 갱신
+            self._request_order_change()   # 두 윈도우 동시 갱신
             self.reset_log()
             self.set_status("준비 완료 - 메뉴를 터치하거나 말하기 버튼을 누르세요")
             speak("주문이 취소되었습니다. 처음부터 다시 주문해 주세요.")
@@ -8567,7 +8590,7 @@ class CafeKioskApp:
         if is_yes(text):
             receipt = finalize_order()      # 결제 처리 + TTS
             self.log("\n" + receipt)
-            self.on_order_change()          # 두 윈도우 장바구니 동시 갱신
+            self._request_order_change()          # 두 윈도우 장바구니 동시 갱신
 
             self.state = self.STATE_NEW_ORDER
             self.log('\n🆕  새 주문을 받으시겠습니까?')
@@ -8689,7 +8712,7 @@ class CafeKioskApp:
         self._pending_voice_order = None
 
         if add_to_order_by_name_qty(name, actual_price, option, qty):
-            self.on_order_change()
+            self._request_order_change()
             total = sum(i["qty"] for i in order_list)
             label = f"{name}({option})" if option else name
             self.log(f"\n🎙️  [음성·대화형] {label} {qty}{_unit(name)} 추가 — 총 {total}개")
@@ -8808,7 +8831,7 @@ class CafeKioskApp:
 
         option, actual_price = _voice_order_option_and_price(selected, base_price, option_text)
         if add_to_order_by_name(selected, actual_price, option):
-            self.on_order_change()
+            self._request_order_change()
             total = sum(i["qty"] for i in order_list)
             self.log(f"\n🎙️  [음성] {selected} 추가 — 총 {total}개")
             self.log(get_order_summary_text())
@@ -8895,7 +8918,7 @@ class CafeKioskApp:
                             menu_found = add_to_order_qty(text, qty)
 
                         if menu_found:
-                            self.on_order_change()
+                            self._request_order_change()
                             total = sum(i["qty"] for i in order_list)
                             # 사이즈·옵션 정보 로그 출력
                             info_parts = []
@@ -8951,7 +8974,7 @@ class CafeKioskApp:
                             if not removed and canonical != menu_raw:
                                 removed = remove_menu_from_order(menu_raw)
                             if removed:
-                                self.on_order_change()
+                                self._request_order_change()
                                 self.log(f"\n❌  {canonical} 주문이 취소되었습니다.")
                                 self.log(get_order_summary_text())
                                 if fulfillment:
@@ -8963,7 +8986,7 @@ class CafeKioskApp:
                             # 전체 취소
                             self._invalidate_checkout_session()
                             order_list.clear()
-                            self.on_order_change()
+                            self._request_order_change()
                             self.log("\n❌  주문이 전체 취소되었습니다.")
                             self.set_status("준비 완료 - 메뉴를 터치하거나 말하기 버튼을 누르세요")
                             speak(fulfillment or "주문이 취소되었습니다. 처음부터 다시 주문해 주세요.")
@@ -9095,7 +9118,7 @@ class CafeKioskApp:
         if match_menu_from_db(text) and not _is_non_order_menu_query(text):
             found = add_to_order(text)
             if found:
-                self.on_order_change()
+                self._request_order_change()
                 total = sum(i["qty"] for i in order_list)
                 self.log(f"\n🎙️  [음성] 메뉴 추가 — 총 {total}개")
                 self.log(get_order_summary_text())
@@ -9113,7 +9136,7 @@ class CafeKioskApp:
         elif command == "cancel":
             self._invalidate_checkout_session()
             order_list.clear()
-            self.on_order_change()
+            self._request_order_change()
             self.log("\n❌ 주문이 취소되었습니다.")
             self.set_status("준비 완료 - 메뉴를 터치하거나 말하기 버튼을 누르세요")
             speak("주문이 취소되었습니다. 처음부터 다시 주문해 주세요.")
@@ -9140,7 +9163,7 @@ class CafeKioskApp:
         else:
             found = add_to_order(text)
             if found:
-                self.on_order_change()
+                self._request_order_change()
                 total = sum(i["qty"] for i in order_list)
                 self.log(f"\n🎙️  [음성] 메뉴 추가 — 총 {total}개")
                 self.log(get_order_summary_text())
@@ -9395,6 +9418,22 @@ class KioskScreen:
 
         self._build_ui()
         self._refresh_cart()   # 초기 장바구니 표시
+
+    def _request_order_change(self) -> None:
+        """장바구니/주문 UI 갱신 콜백을 Tk 메인 루프에서 실행한다."""
+        def _run() -> None:
+            try:
+                self.on_order_change()
+            except Exception as exc:
+                log_error_event(f"Kiosk window order refresh failed: {exc}")
+
+        try:
+            if threading.current_thread() is threading.main_thread():
+                _run()
+            else:
+                self.root.after(0, _run)
+        except tk.TclError:
+            pass
 
     # ──────────────────────────────────────────────────
     # 8-1  UI 빌드
@@ -9897,6 +9936,13 @@ class KioskScreen:
         order_list 현재 상태를 키오스크 장바구니 패널에 반영한다.
         after_idle(...) 로 연속 갱신 요청을 한 번으로 합친다.
         """
+        if threading.current_thread() is not threading.main_thread():
+            try:
+                self.root.after(0, self._refresh_cart)
+            except tk.TclError:
+                pass
+            return
+
         if self._cart_refresh_pending:
             self._cart_refresh_requested = True
             return
@@ -10045,7 +10091,7 @@ class KioskScreen:
         def _apply(option: str, actual_price: int) -> None:
             changed, _old_label, _new_label = update_order_item_options(index, option, actual_price)
             if changed:
-                self.on_order_change()
+                self._request_order_change()
 
         start_menu_option_selection(self.container.winfo_toplevel(), name, base_price, _apply)
 
@@ -10077,7 +10123,7 @@ class KioskScreen:
 
             def _do_add() -> None:
                 if add_to_order_by_name(name, actual_price, opt):
-                    self.on_order_change()
+                    self._request_order_change()
 
             threading.Thread(target=_do_add, daemon=True).start()
 
@@ -10108,7 +10154,7 @@ class KioskScreen:
         self._notify_user_interaction()
         def _do():
             remove_one_from_order(name, option)
-            self.on_order_change()
+            self._request_order_change()
         threading.Thread(target=_do, daemon=True).start()
 
     # ──────────────────────────────────────────────────
@@ -10207,7 +10253,7 @@ class KioskScreen:
                                 f"  결제수단: {method}\n"
                                 f"  영수증: {receipt_status}"
                             )
-                        self.on_order_change()       # 두 윈도우 장바구니 UI 갱신
+                        self._request_order_change()       # 두 윈도우 장바구니 UI 갱신
                         self.root.after(0, lambda r=receipt, w=wait: self.on_order_complete(r, w))
                     threading.Thread(target=_do_finalize, daemon=True).start()
 
@@ -10234,7 +10280,7 @@ class KioskScreen:
         def _do():
             self._invalidate_checkout_session()
             order_list.clear()
-            self.on_order_change()   # 두 윈도우 동시 갱신
+            self._request_order_change()   # 두 윈도우 동시 갱신
             if self.on_cancel_log is not None:
                 self.on_cancel_log()
             speak("주문이 취소되었습니다.")
