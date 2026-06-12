@@ -1969,12 +1969,12 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
                 try:
                     if "state" in child.keys():
                         child.configure(state="disabled")
-                except tk.TclError:
+                except (tk.TclError, RuntimeError):
                     pass
                 _walk(child)
         try:
             _walk(popup)
-        except tk.TclError:
+        except (tk.TclError, RuntimeError):
             pass
 
     def _close() -> None:
@@ -1988,11 +1988,11 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
             return
         try:
             popup.grab_release()
-        except tk.TclError:
+        except (tk.TclError, RuntimeError):
             pass
         try:
             popup.destroy()
-        except tk.TclError:
+        except (tk.TclError, RuntimeError):
             pass
         try:
             show_admin_auth_popup._popup = None
@@ -2009,10 +2009,17 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
                 on_authenticated()
             except Exception as exc:
                 log_error_event(f"Open settings after admin auth failed: {exc}")
+                try:
+                    messagebox.showerror(
+                        "설정",
+                        f"설정 창을 열지 못했습니다.\n\n{exc}",
+                        parent=owner if _widget_exists(owner) else None,
+                    )
+                except Exception:
+                    pass
 
-        try:
-            owner.after(80, _open_settings_after_auth)
-        except tk.TclError:
+        delay = 140 if IS_RPI else 60
+        if _safe_after(owner, delay, _open_settings_after_auth) is None:
             _open_settings_after_auth()
 
     def _schedule_finish_auth(delay_ms: int) -> None:
@@ -2020,9 +2027,7 @@ def show_admin_auth_popup(root: tk.Misc, on_authenticated: "callable") -> None:
             return
         auth_pending["value"] = True
         _lock_auth_controls()
-        try:
-            popup.after(max(0, int(delay_ms)), _finish_auth)
-        except tk.TclError:
+        if _safe_after(owner, max(0, int(delay_ms)), _finish_auth) is None:
             _finish_auth()
 
     def _clear_body() -> None:
@@ -7067,6 +7072,7 @@ class CafeKioskApp:
         y = parent.winfo_rooty() + _px(58)
         win.geometry(f"{win_w}x{win_h}+{x}+{y}")
         _safe_lift(win, parent)
+        _safe_after(win, 160 if IS_RPI else 60, lambda: _safe_lift(win, parent))
 
         def _close_settings() -> None:
             self._flush_pending_settings_save()
