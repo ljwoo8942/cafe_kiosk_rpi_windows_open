@@ -8619,7 +8619,7 @@ class CafeKioskApp:
         self._flush_pending_settings_save()
         def _do():
             speak("이용해 주셔서 감사합니다. 안녕히 가세요.")
-            self.root.after(3000, self.root.destroy)
+            _safe_after(self.root, 3000, self.root.destroy)
         threading.Thread(target=_do, daemon=True).start()
 
     def _btn_recommend(self) -> None:
@@ -8726,7 +8726,8 @@ class CafeKioskApp:
 
                 show_payment_method_popup(top, _show_payment_wait)
 
-            self.root.after(
+            _safe_after(
+                self.root,
                 0,
                 _show_payment_methods,
             )
@@ -8792,7 +8793,7 @@ class CafeKioskApp:
         elif is_no(text):
             speak("감사합니다. 안녕히 가세요.")
             self.log("\n👋 감사합니다. 안녕히 가세요!")
-            self.root.after(3000, self.root.destroy)
+            _safe_after(self.root, 3000, self.root.destroy)
 
         else:
             self.log(f'  ⚠️  "네" 또는 "아니오" 로 답해주세요. (인식: "{text}")')
@@ -9047,7 +9048,8 @@ class CafeKioskApp:
             rec_names = ", ".join(recs)
             self.log(f"\n⭐  메뉴 추천: {rec_names}")
             speak(f"오늘의 추천 메뉴는 {rec_names}입니다. 화면에서 바로 담아보세요!")
-            self.root.after(
+            _safe_after(
+                self.root,
                 0,
                 lambda r=recs: show_recommendation_popup(
                     self.root, r,
@@ -9215,7 +9217,8 @@ class CafeKioskApp:
                             "화면에서 바로 담아보세요!"
                         )
                         speak(tts)
-                        self.root.after(
+                        _safe_after(
+                            self.root,
                             0,
                             lambda r=recs: show_recommendation_popup(
                                 self.root, r,
@@ -9303,7 +9306,7 @@ class CafeKioskApp:
         if command == "exit":
             speak("이용해 주셔서 감사합니다. 안녕히 가세요.")
             self.log("\n👋 이용해 주셔서 감사합니다. 안녕히 가세요!")
-            self.root.after(2000, self.root.destroy)
+            _safe_after(self.root, 2000, self.root.destroy)
 
         elif command == "cancel":
             self._invalidate_checkout_session()
