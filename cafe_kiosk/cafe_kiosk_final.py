@@ -542,14 +542,26 @@ else:
 # ─────────────────────────────────────────────────────
 UI_SCALE:    float = 1.0    # main() 에서 갱신
 TINY_SCREEN: bool  = False  # 5인치급 (sw≤900 or sh≤520) — main() 에서 갱신
+_scaled_font_cache: dict[tuple[float, int], int] = {}
+_scaled_px_cache: dict[tuple[float, int], int] = {}
 
 def _fs(size: int) -> int:
     """폰트 크기를 UI_SCALE 에 맞게 조정한다 (최소 9pt)."""
-    return max(9, int(size * UI_SCALE))
+    key = (UI_SCALE, int(size))
+    cached = _scaled_font_cache.get(key)
+    if cached is None:
+        cached = max(9, int(size * UI_SCALE))
+        _scaled_font_cache[key] = cached
+    return cached
 
 def _px(pixels: int) -> int:
     """픽셀 크기를 UI_SCALE 에 맞게 조정한다 (최소 4px)."""
-    return max(4, int(pixels * UI_SCALE))
+    key = (UI_SCALE, int(pixels))
+    cached = _scaled_px_cache.get(key)
+    if cached is None:
+        cached = max(4, int(pixels * UI_SCALE))
+        _scaled_px_cache[key] = cached
+    return cached
 
 
 def _detect_xrandr_monitors() -> list[dict[str, int | str]]:
@@ -1651,8 +1663,19 @@ def _widget_exists(widget: "tk.Misc | None") -> bool:
         return False
     try:
         return bool(widget.winfo_exists())
-    except tk.TclError:
+    except (tk.TclError, RuntimeError):
         return False
+
+
+def _safe_after(widget: "tk.Misc | None", delay_ms: int,
+                callback: "callable", *args) -> "str | None":
+    """Tk 종료/파괴 타이밍과 겹쳐도 after 예약 실패가 스레드를 깨지 않게 한다."""
+    if not _widget_exists(widget):
+        return None
+    try:
+        return widget.after(delay_ms, callback, *args)
+    except (tk.TclError, RuntimeError):
+        return None
 
 
 def _wheel_scroll_units(event) -> int:
@@ -2896,10 +2919,7 @@ def show_order_complete_popup(root: tk.Tk, receipt: str, wait_min: int) -> None:
         remain = 1.0 - (time.monotonic() - opened_at)
         if remain > 0:
             time.sleep(remain)
-        try:
-            popup.after(0, _close)
-        except tk.TclError:
-            pass
+        _safe_after(popup, 0, _close)
 
     popup.update_idletasks()
     _safe_lift(popup, owner)
@@ -5329,7 +5349,7 @@ def show_update_popup(root: tk.Tk) -> None:
 
         def _worker() -> None:
             result = _check_latest_release_status(timeout=12)
-            popup.after(0, lambda: _finish_check(result) if _widget_exists(popup) else None)
+            _safe_after(popup, 0, lambda: _finish_check(result) if _widget_exists(popup) else None)
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -5356,10 +5376,13 @@ def show_update_popup(root: tk.Tk) -> None:
                 parent=popup,
             )
             if result.get("exit_app"):
-                try:
-                    popup.after(500, popup.winfo_toplevel().destroy)
-                except tk.TclError:
-                    pass
+                def _destroy_after_update() -> None:
+                    try:
+                        popup.winfo_toplevel().destroy()
+                    except (tk.TclError, RuntimeError):
+                        pass
+
+                _safe_after(popup, 500, _destroy_after_update)
         else:
             messagebox.showwarning("업데이트", str(result.get("message", "업데이트에 실패했습니다.")), parent=popup)
 
@@ -5388,7 +5411,7 @@ def show_update_popup(root: tk.Tk) -> None:
 
         def _worker() -> None:
             result = _apply_release_update(dict(release_info))
-            popup.after(0, lambda: _finish_apply(result) if _widget_exists(popup) else None)
+            _safe_after(popup, 0, lambda: _finish_apply(result) if _widget_exists(popup) else None)
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -6502,8 +6525,8 @@ class CafeKioskApp:
             if threading.current_thread() is threading.main_thread():
                 _run()
             else:
-                self.root.after(0, _run)
-        except tk.TclError:
+                _safe_after(self.root, 0, _run)
+        except (tk.TclError, RuntimeError):
             pass
 
     def _install_session_activity_bindings(self) -> None:
@@ -6530,10 +6553,7 @@ class CafeKioskApp:
         if threading.current_thread() is threading.main_thread():
             self._reset_log_for_new_interaction()
         else:
-            try:
-                self.root.after(0, self._reset_log_for_new_interaction)
-            except tk.TclError:
-                pass
+            _safe_after(self.root, 0, self._reset_log_for_new_interaction)
 
     def _has_active_session(self) -> bool:
         """초기화할 만한 진행 중 주문/대화/팝업이 있는지 판단한다."""
@@ -6932,7 +6952,7 @@ class CafeKioskApp:
 
         def _worker() -> None:
             result = _check_latest_release_status(timeout=8)
-            self.root.after(0, lambda: self._finish_background_update_check(result))
+            _safe_after(self.root, 0, lambda: self._finish_background_update_check(result))
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -7563,8 +7583,8 @@ class CafeKioskApp:
         """
         if threading.current_thread() is not threading.main_thread():
             try:
-                self.root.after(0, self._refresh_cart_ui)
-            except tk.TclError:
+                _safe_after(self.root, 0, self._refresh_cart_ui)
+            except (tk.TclError, RuntimeError):
                 pass
             return
 
@@ -7743,7 +7763,7 @@ class CafeKioskApp:
             self.log_text.insert(tk.END, message + "\n")
             self.log_text.see(tk.END)    # 마지막 줄 자동 스크롤
             self.log_text.config(state="disabled")
-        self.root.after(0, _insert)
+        _safe_after(self.root, 0, _insert)
 
     def reset_log(self) -> None:
         """로그 창을 지우고 초기 사용 안내를 다시 표시한다."""
@@ -7767,7 +7787,7 @@ class CafeKioskApp:
             self.log_text.insert(tk.END, "\n".join(lines) + "\n")
             self.log_text.see("1.0")
             self.log_text.config(state="disabled")
-        self.root.after(0, _do)
+        _safe_after(self.root, 0, _do)
 
     def _cancel_log_reset_after_tts(self) -> None:
         """예약된 주문 완료 후 로그 초기화 작업을 취소한다."""
@@ -7812,23 +7832,23 @@ class CafeKioskApp:
                     self._log_reset_after_tts_job = None
                     self.reset_log()
 
-                self._log_reset_after_tts_job = self.root.after(delay_ms, _do_reset)
+                self._log_reset_after_tts_job = _safe_after(self.root, delay_ms, _do_reset)
 
-            self.root.after(0, _arm_reset)
+            _safe_after(self.root, 0, _arm_reset)
 
         threading.Thread(target=_wait_for_tts_then_arm, daemon=True).start()
 
     def set_status(self, msg: str) -> None:
         """상태 레이블 갱신. after(0)으로 메인 스레드에서 처리."""
-        self.root.after(0, lambda: self.status_var.set(msg))
+        _safe_after(self.root, 0, lambda: self.status_var.set(msg))
 
     def _set_listen_btn(self, recording: bool) -> None:
         """[말하기] 버튼 텍스트·색상을 녹음 상태에 맞게 전환."""
         if recording:
-            self.root.after(0, lambda: self.listen_btn.config(
+            _safe_after(self.root, 0, lambda: self.listen_btn.config(
                 text="녹음 중", bg=self._btn_stop_color))
         else:
-            self.root.after(0, lambda: self.listen_btn.config(
+            _safe_after(self.root, 0, lambda: self.listen_btn.config(
                 text="말하기", bg=self._btn_rec_color))
 
     # ──────────────────────────────────────────────────
@@ -8419,14 +8439,16 @@ class CafeKioskApp:
                     self.recognizer.adjust_for_ambient_noise(source, duration=1.5)
                 threshold = int(getattr(self.recognizer, "energy_threshold", 0))
                 self.log(f"소음 보정 완료 - 기준값 {threshold}")
-                self.root.after(
+                _safe_after(
+                    self.root,
                     0,
                     lambda t=threshold: self._mic_status_var.set(f"소음 보정 완료 - 기준값 {t}")
                 )
                 speak("소음 보정이 완료되었습니다.")
             except Exception as e:
                 self.log(f"[경고] 소음 보정 실패: {e}")
-                self.root.after(
+                _safe_after(
+                    self.root,
                     0,
                     lambda msg=str(e)[:24]: self._mic_status_var.set(f"소음 보정 실패: {msg}")
                 )
@@ -8568,7 +8590,7 @@ class CafeKioskApp:
             self.log(f"\n💳  결제수단 선택: {method}")
             self.log(f"\n🧾  영수증: {'발행' if issue_receipt else '미발행'}")
             if self.on_order_complete is not None:
-                self.root.after(0, lambda r=receipt, w=wait: self.on_order_complete(r, w))
+                _safe_after(self.root, 0, lambda r=receipt, w=wait: self.on_order_complete(r, w))
             else:
                 self.log("\n" + receipt)
         threading.Thread(target=_do_finalize, daemon=True).start()
@@ -9578,8 +9600,8 @@ class KioskScreen:
             if threading.current_thread() is threading.main_thread():
                 _run()
             else:
-                self.root.after(0, _run)
-        except tk.TclError:
+                _safe_after(self.root, 0, _run)
+        except (tk.TclError, RuntimeError):
             pass
 
     # ──────────────────────────────────────────────────
@@ -10099,8 +10121,8 @@ class KioskScreen:
         """
         if threading.current_thread() is not threading.main_thread():
             try:
-                self.root.after(0, self._refresh_cart)
-            except tk.TclError:
+                _safe_after(self.root, 0, self._refresh_cart)
+            except (tk.TclError, RuntimeError):
                 pass
             return
 
@@ -10415,7 +10437,7 @@ class KioskScreen:
                                 f"  영수증: {receipt_status}"
                             )
                         self._request_order_change()       # 두 윈도우 장바구니 UI 갱신
-                        self.root.after(0, lambda r=receipt, w=wait: self.on_order_complete(r, w))
+                        _safe_after(self.root, 0, lambda r=receipt, w=wait: self.on_order_complete(r, w))
                     threading.Thread(target=_do_finalize, daemon=True).start()
 
                 show_order_type_popup(self.container.winfo_toplevel(), _show_final_confirm)
@@ -10430,7 +10452,7 @@ class KioskScreen:
                 log_error_event(f"Kiosk order confirm failed: {exc}")
                 show_empty_cart_notice(self.container.winfo_toplevel())
 
-        self.root.after(0, _show_dialog)
+        _safe_after(self.root, 0, _show_dialog)
 
     def _on_cancel(self) -> None:
         """
